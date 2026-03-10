@@ -1,0 +1,105 @@
+{
+  "name": "fc-dashboard",
+  "nodes": [
+    {
+      "id": "d0a1b2c3-0001-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 300],
+      "webhookId": "fc-dashboard-webhook",
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "fc-dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "d0a1b2c3-0002-4000-8000-000000000002",
+      "name": "Get All Work Orders",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [240, 300],
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1HRZvsz-rjpItXbZVeG1wFDWr1mlGzKvSttwgGrgEf3I"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "All"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "id": "d0a1b2c3-0003-4000-8000-000000000003",
+      "name": "Map to JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300],
+      "parameters": {
+        "jsCode": "const headerMap = {\n  'Work Order ID': 'workOrderId',\n  'Submitted At': 'submittedAt',\n  'Organization': 'locationGroup',\n  'Location': 'locationSub',\n  'Requested By': 'requesterName',\n  'Contact Method': 'contactMethod',\n  'Category': 'category',\n  'Priority': 'priority',\n  'Safety Hazard': 'safetyHazard',\n  'Description': 'description',\n  'Best Time to Access': 'bestTimeToAccess',\n  'Needed By Date': 'neededByDate',\n  'Photo Count': 'photoCount',\n  'Photo URLs': 'photoUrls',\n  'PDF URL': 'pdfUrl',\n  'Status': 'status',\n  'Technician': 'techName',\n  'Closed At': 'closedAt',\n  'Completion Notes': 'completionNotes',\n  'Parts Used': 'partsUsed',\n  'Completion Photo URL': 'completionPhotoUrl',\n  'Closure PDF URL': 'closurePdfUrl'\n};\n\nconst rows = $input.all();\nif (!rows || rows.length === 0) {\n  return [{ json: { data: [] } }];\n}\n\nconst data = rows\n  .map(item => {\n    const mapped = {};\n    for (const [sheetCol, jsonKey] of Object.entries(headerMap)) {\n      mapped[jsonKey] = item.json[sheetCol] || '';\n    }\n    return mapped;\n  })\n  .filter(row => row.workOrderId);\n\nreturn [{ json: { data } }];"
+      }
+    },
+    {
+      "id": "d0a1b2c3-0004-4000-8000-000000000004",
+      "name": "Return Dashboard Data",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [720, 300],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.data) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "Access-Control-Allow-Origin", "value": "*" }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          { "node": "Get All Work Orders", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Get All Work Orders": {
+      "main": [
+        [
+          { "node": "Map to JSON", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Map to JSON": {
+      "main": [
+        [
+          { "node": "Return Dashboard Data", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {}
+}
