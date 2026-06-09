@@ -385,44 +385,6 @@ function PriorityPill({ priority }) {
   );
 }
 
-// ─── Settings sheet ───────────────────────────────────────────────────────────
-function Settings({ cfg, onSave, onClose }) {
-  const [draft, setDraft]=useState(cfg);
-  const set=(k)=>(v)=>setDraft(d=>({...d,[k]:v}));
-  return (
-    <div style={s.overlay} onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={s.sheet}>
-        <div style={s.sheetHandle}/>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div>
-            <div style={{fontWeight:700,fontSize:17,color:B.charcoal}}>⚙️ Settings</div>
-            <div style={{fontSize:13,color:B.gray,marginTop:2}}>Configure your n8n webhook URLs</div>
-          </div>
-          <button onClick={onClose} style={s.closeBtn}>✕</button>
-        </div>
-        {[
-          {k:"webhookOpen",  label:"Open Work Order Webhook URL",   ph:"https://n8n.example.com/webhook/fc-facilities-rm"},
-          {k:"webhookClose", label:"Close Work Order Webhook URL",  ph:"https://n8n.example.com/webhook/fc-facilities-close"},
-          {k:"dashboardUrl", label:"Dashboard Data URL (GET → JSON array)", ph:"https://n8n.example.com/webhook/fc-dashboard"},
-        ].map(({k,label,ph})=>(
-          <div key={k} style={{marginBottom:14}}>
-            <Label>{label}</Label>
-            <input type="url" value={draft[k]||""} onChange={e=>set(k)(e.target.value)}
-              placeholder={ph} style={{...s.input,marginTop:6,fontSize:13}}/>
-          </div>
-        ))}
-        <p style={{fontSize:12,color:B.gray,margin:"4px 0 20px"}}>
-          All URLs are stored locally in your browser. Photos and PDFs are sent as base64 strings.
-        </p>
-        <div style={{display:"flex",gap:10}}>
-          <button onClick={()=>{onSave(draft);onClose();}} style={s.btnRed}>Save</button>
-          <button onClick={onClose} style={s.btnOutline}>Cancel</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── How-To modal ─────────────────────────────────────────────────────────────
 function HowTo({ onClose }) {
   const [openDevice, setOpenDevice] = useState(null); // "iphone" | "android" | null
@@ -470,13 +432,11 @@ function HowTo({ onClose }) {
   };
 
   const sections=[
-    { emoji:"📋", title:"Dashboard (Tab 1)", body:"The Dashboard pulls live work order data from your Google Sheet via n8n. It shows open vs. closed counts, priority breakdowns, and a filterable list of all work orders. Tap any card to expand its details. Use the filter bar to narrow by status, priority, or location. Data refreshes when you tap the ↻ button." },
-    { emoji:"🔧", title:"Open a Work Order (Tab 2)", body:"Fill out all required fields (marked *) and tap Submit Request. A work order number is auto-generated (e.g. FCF-250601-4827). The form sends a JSON payload to your n8n webhook, which logs the data to Google Sheets, saves the PDF to Google Drive, emails the maintenance tech and supervisor, and sends a Slack alert for emergencies. You can also download the PDF directly from the success screen." },
-    { emoji:"✅", title:"Close a Work Order (Tab 3)", body:"Enter the work order ID, the technician's name, completion notes, and any parts used. Select a closure status (Resolved, Closed, or Cancelled) and optionally attach a completion photo. Submitting updates the existing row in Google Sheets, saves a closure PDF to Drive, and sends a confirmation email to the supervisor." },
-    { emoji:"⚙️", title:"Settings", body:"Tap the ⚙️ gear icon in the header to configure three webhook URLs: one for opening work orders, one for closing them, and one for the dashboard data feed. These are stored in your browser — you only need to set them once." },
-    { emoji:"⚠️", title:"Safety Hazard Flag", body:"When the Safety Hazard toggle is on, the request auto-escalates to Emergency in the payload regardless of the priority level selected. This triggers the highest-priority email and a Slack alert to the maintenance tech." },
-    { emoji:"📁", title:"PDF Storage in Google Drive", body:"Every submitted work order PDF is saved by n8n to a Google Drive folder organized by organization and location (e.g. Drive/Work Order PDFs/Burroughs Restaurant Group/Dexter/). Closure PDFs are saved to the same folder with a -CLOSED suffix. You never lose a record." },
-    { emoji:"📊", title:"Google Sheets Structure", body:"Each organization group has its own tab (BRG, FC, RSL, Misc) plus an All tab that captures every submission. Columns track: Work Order ID, Location, Requester, Category, Priority, Status, Timestamps, Technician, Parts Used, and PDF links. The dashboard reads from the All tab." },
+    { emoji:"📋", title:"Dashboard (Tab 1)", body:"The Dashboard pulls live work order data. It shows open vs. closed counts, priority breakdowns, and a filterable list of all work orders. Tap any card to expand its details. Use the filter bar to narrow by status, priority, or location. Data refreshes when you tap the ↻ button." },
+    { emoji:"🔧", title:"Open a Work Order (Tab 2)", body:"Fill out all required fields (marked *) and tap Submit Request. A work order number is auto-generated (e.g. FCF-250601-4827). Submitting saves the work order, stores the PDF and any photos, emails the maintenance tech and supervisor, and sends a Slack alert for emergencies. You can also download the PDF directly from the success screen." },
+    { emoji:"✅", title:"Close a Work Order (Tab 3)", body:"Enter the work order ID, the technician's name, completion notes, and any parts used. Select a closure status (Resolved, Closed, or Cancelled) and optionally attach a completion photo. Submitting updates the existing work order, saves a closure PDF, and sends a confirmation email to the supervisor." },
+    { emoji:"⚠️", title:"Safety Hazard Flag", body:"When the Safety Hazard toggle is on, the request auto-escalates to Emergency regardless of the priority level selected. This triggers the highest-priority email and a Slack alert to the maintenance tech." },
+    { emoji:"📁", title:"PDF & Photo Storage", body:"Every submitted work order PDF and photo is stored securely and linked from the work order. Closure PDFs are saved alongside the original. You never lose a record." },
     { emoji:"💡", title:"Tips", body:"• Use the Best Time to Access field so the tech knows when they can get in.\n• Attach a photo whenever possible — it speeds up diagnosis.\n• For time-sensitive repairs, set a Needed By date so it shows in the dashboard.\n• The dashboard is read-only — to update a status, submit a Close Work Order form.\n• Bookmark this app and tap Add to Home Screen for one-tap access from your phone." },
   ];
   return (
@@ -554,7 +514,7 @@ function SuccessScreen({ id, label, fields, onReset, onPDF, resetLabel="Submit A
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 2 — Open Work Order
 // ═══════════════════════════════════════════════════════════════════════════════
-function OpenWO({ cfg }) {
+function OpenWO() {
   const [form, setForm]=useState(EMPTY_OPEN);
   const [status, setStatus]=useState(null);
   const [submitted, setSubmitted]=useState(false);
@@ -576,7 +536,6 @@ function OpenWO({ cfg }) {
   const handleSubmit=async()=>{
     const err=validate();
     if (err) { setStatus({type:"error",message:err}); return; }
-    if (!cfg.webhookOpen) { setStatus({type:"error",message:"No Open WO webhook set. Tap ⚙️ to configure."}); return; }
 
     const id=genId(), ts=formatTs();
     const [locationGroup,locationSub]=form.location.includes(" — ")
@@ -584,7 +543,7 @@ function OpenWO({ cfg }) {
 
     setStatus({type:"loading",message:"Submitting work order…"});
 
-    // Build PDF as base64 to send to n8n for Drive storage
+    // Build PDF as base64; the API route stores it in Supabase Storage
     const pdfBase64=await buildPDF({...form,_type:"open"},id,ts,false);
     const effectiveEmergency=form.priority==="emergency"||form.safetyHazard;
 
@@ -599,11 +558,11 @@ function OpenWO({ cfg }) {
       timeSensitive:form.timeSensitive, neededByDate:form.timeSensitive?form.neededByDate:null,
       photos:form.photos.map(p=>({photo:p.b64,photoName:p.name})),
       photoCount:form.photos.length,
-      pdfBase64,  // n8n decodes this and saves to Drive
+      pdfBase64,  // API route decodes this and saves to Supabase Storage
     };
 
     try {
-      const res=await fetch(cfg.webhookOpen,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const res=await fetch("/api/work-orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setWoId(id); setSavedForm({...form,_type:"open"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
@@ -697,7 +656,7 @@ function OpenWO({ cfg }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 3 — Close Work Order
 // ═══════════════════════════════════════════════════════════════════════════════
-function CloseWO({ cfg }) {
+function CloseWO() {
   const [form, setForm]=useState(EMPTY_CLOSE);
   const [status, setStatus]=useState(null);
   const [submitted, setSubmitted]=useState(false);
@@ -710,14 +669,13 @@ function CloseWO({ cfg }) {
   const woDropdownRef=useRef(null);
   const set=(k)=>(v)=>setForm(f=>({...f,[k]:v}));
 
-  // Fetch open work orders from dashboard endpoint
+  // Fetch open work orders from the API
   useEffect(()=>{
-    if (!cfg.dashboardUrl) return;
     let cancelled=false;
     (async()=>{
       setWoLoading(true);
       try {
-        const res=await fetch(cfg.dashboardUrl);
+        const res=await fetch("/api/work-orders");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data=await res.json();
         const open=(Array.isArray(data)?data:[]).filter(o=>!["Closed","Cancelled","Resolved"].includes(o.status));
@@ -726,7 +684,7 @@ function CloseWO({ cfg }) {
       finally { if (!cancelled) setWoLoading(false); }
     })();
     return ()=>{ cancelled=true; };
-  },[cfg.dashboardUrl]);
+  },[]);
 
   // Close dropdown when clicking outside
   useEffect(()=>{
@@ -757,7 +715,6 @@ function CloseWO({ cfg }) {
   const handleSubmit=async()=>{
     const err=validate();
     if (err) { setStatus({type:"error",message:err}); return; }
-    if (!cfg.webhookClose) { setStatus({type:"error",message:"No Close WO webhook set. Tap ⚙️ to configure."}); return; }
 
     const ts=formatTs();
     setStatus({type:"loading",message:"Submitting closure…"});
@@ -776,7 +733,7 @@ function CloseWO({ cfg }) {
     };
 
     try {
-      const res=await fetch(cfg.webhookClose,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const res=await fetch(`/api/work-orders/${encodeURIComponent(payload.workOrderId)}/close`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSavedForm({...form,_type:"close"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
@@ -881,7 +838,7 @@ function CloseWO({ cfg }) {
             <div style={{background:"#fffbeb",border:"1.5px solid #fde68a",borderRadius:10,padding:"10px 12px",marginTop:8,display:"flex",gap:8,alignItems:"flex-start"}}>
               <span style={{fontSize:16,flexShrink:0}}>💡</span>
               <p style={{margin:0,fontSize:12,color:"#92400e",lineHeight:1.4}}>
-                {woLoading?"Loading open work orders…":"Enter the Work Order ID as it appears on the PDF or Google Sheets. Configure a dashboard URL in ⚙️ to see a selectable list."}
+                {woLoading?"Loading open work orders…":"Enter the Work Order ID as it appears on the PDF, or pick from the list of open work orders."}
               </p>
             </div>
           </>
@@ -952,7 +909,7 @@ function CloseWO({ cfg }) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TAB 1 — Dashboard
 // ═══════════════════════════════════════════════════════════════════════════════
-function Dashboard({ cfg }) {
+function Dashboard() {
   const [orders, setOrders]=useState([]);
   const [loading, setLoading]=useState(false);
   const [error, setError]=useState(null);
@@ -963,17 +920,25 @@ function Dashboard({ cfg }) {
   const [lastRefresh, setLastRefresh]=useState(null);
 
   const fetchData=useCallback(async()=>{
-    if (!cfg.dashboardUrl) { return; }  // no URL yet — show empty state, not an error
     setLoading(true); setError(null);
     try {
-      const res=await fetch(cfg.dashboardUrl);
+      const res=await fetch("/api/work-orders");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data=await res.json();
-      setOrders(Array.isArray(data)?data:[]);
+      const arr=Array.isArray(data)?data:[];
+      setOrders(arr);
+      try { localStorage.setItem("fc_dashboard_cache",JSON.stringify(arr)); } catch {}
       setLastRefresh(new Date().toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true}));
-    } catch(e) { setError(`Could not load data: ${e.message}`); }
+    } catch(e) {
+      // Graceful degradation: fall back to the last good data instead of a dead error screen.
+      try {
+        const cached=localStorage.getItem("fc_dashboard_cache");
+        if (cached) setOrders(JSON.parse(cached));
+      } catch {}
+      setError("Couldn't refresh — showing last loaded data.");
+    }
     finally { setLoading(false); }
-  },[cfg.dashboardUrl]);
+  },[]);
 
   useEffect(()=>{ fetchData(); },[fetchData]);
 
@@ -1001,7 +966,7 @@ function Dashboard({ cfg }) {
           <span style={s.formTag}>LIVE</span>
           <h1 style={s.formTitle}>Dashboard</h1>
           <p style={s.formSub}>
-            {lastRefresh?`Last updated ${lastRefresh}`:"Work order tracking · connected to Google Sheets"}
+            {lastRefresh?`Last updated ${lastRefresh}`:"Live work order tracking"}
           </p>
         </div>
         <button onClick={fetchData} disabled={loading}
@@ -1013,15 +978,6 @@ function Dashboard({ cfg }) {
 
       {/* Error */}
       {error&&<Banner status={{type:"error",message:error}}/>}
-
-      {/* No URL yet */}
-      {!cfg.dashboardUrl&&!error&&(
-        <div style={{textAlign:"center",padding:"48px 20px",color:B.gray}}>
-          <div style={{fontSize:48,marginBottom:12}}>📊</div>
-          <div style={{fontWeight:700,fontSize:16,marginBottom:6,color:B.charcoal}}>No dashboard URL configured</div>
-          <div style={{fontSize:14}}>Tap ⚙️ in the header to add your n8n dashboard data URL.</div>
-        </div>
-      )}
 
       {/* Stat cards */}
       {orders.length>0&&(
@@ -1224,38 +1180,9 @@ const TABS = [
   { id:"howto",     label:"How-To",        emoji:"📖" },
 ];
 
-const CFG_DEFAULT = {
-  webhookOpen:  process.env.NEXT_PUBLIC_WEBHOOK_URL       || "",
-  webhookClose: process.env.NEXT_PUBLIC_WEBHOOK_CLOSE     || "",
-  dashboardUrl: process.env.NEXT_PUBLIC_WEBHOOK_DASHBOARD || "",
-};
-
 export default function FirstChoiceFacilitiesHub() {
   const [tab,      setTab]     = useState("dashboard");
-  const [showCfg,  setShowCfg] = useState(false);
   const [showHow,  setShowHow] = useState(false);
-  const [cfg,      setCfg]     = useState(CFG_DEFAULT);
-
-  // Persist settings to localStorage (env vars serve as defaults)
-  useEffect(()=>{
-    try {
-      const stored=localStorage.getItem("fc_hub_cfg");
-      if (stored) {
-        const parsed=JSON.parse(stored);
-        // Only use localStorage values that are non-empty; fall back to env defaults
-        setCfg(prev=>({
-          webhookOpen:  parsed.webhookOpen  || prev.webhookOpen,
-          webhookClose: parsed.webhookClose || prev.webhookClose,
-          dashboardUrl: parsed.dashboardUrl || prev.dashboardUrl,
-        }));
-      }
-    } catch {}
-  },[]);
-
-  const saveCfg=(c)=>{
-    setCfg(c);
-    try { localStorage.setItem("fc_hub_cfg",JSON.stringify(c)); } catch {}
-  };
 
   return (
     <>
@@ -1286,9 +1213,6 @@ export default function FirstChoiceFacilitiesHub() {
                   fontSize:13,fontWeight:600,color:"#fff",cursor:"pointer",letterSpacing:"0.02em"}}>
                 How-To
               </button>
-              <button onClick={()=>setShowCfg(true)}
-                style={{background:"rgba(255,255,255,0.08)",border:"none",borderRadius:8,padding:"6px 8px",fontSize:20,cursor:"pointer",lineHeight:1}}
-                aria-label="Settings">⚙️</button>
             </div>
           </div>
 
@@ -1310,13 +1234,12 @@ export default function FirstChoiceFacilitiesHub() {
 
         {/* ── Main ── */}
         <main style={{flex:1,maxWidth:720,width:"100%",margin:"0 auto",padding:"20px 16px 56px",display:"flex",flexDirection:"column"}}>
-          {tab==="dashboard" && <Dashboard cfg={cfg}/>}
-          {tab==="open"      && <OpenWO    cfg={cfg}/>}
-          {tab==="close"     && <CloseWO   cfg={cfg}/>}
+          {tab==="dashboard" && <Dashboard/>}
+          {tab==="open"      && <OpenWO/>}
+          {tab==="close"     && <CloseWO/>}
           {tab==="howto"     && <HowToPage onClose={()=>setTab("dashboard")}/>}
         </main>
 
-        {showCfg && <Settings cfg={cfg} onSave={saveCfg} onClose={()=>setShowCfg(false)}/>}
         {showHow && <HowTo onClose={()=>setShowHow(false)}/>}
       </div>
     </>
