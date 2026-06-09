@@ -963,7 +963,7 @@ function Dashboard() {
       {/* Title row */}
       <div style={{...s.formHead,display:"flex",alignItems:"flex-start",justifyContent:"space-between"}}>
         <div>
-          <span style={s.formTag}>LIVE</span>
+          <span style={{...s.formTag,background:error?B.gray:B.red}}>{error?"CACHED":"LIVE"}</span>
           <h1 style={s.formTitle}>Dashboard</h1>
           <p style={s.formSub}>
             {lastRefresh?`Last updated ${lastRefresh}`:"Live work order tracking"}
@@ -1037,7 +1037,7 @@ function Dashboard() {
                     border:`1.5px solid ${f.value!=="All"?B.red:B.border}`,borderRadius:8,
                     background:f.value!=="All"?"#fff0f0":"#fff",appearance:"none",WebkitAppearance:"none",
                     fontFamily:"inherit",cursor:"pointer"}}>
-                  {f.opts.map(o=><option key={o} value={o}>{o==="All"?`All ${f.label}s`:o}</option>)}
+                  {f.opts.map(o=><option key={o} value={o}>{o==="All"?`All ${f.label==="Status"?"Statuses":f.label==="Priority"?"Priorities":f.label+"s"}`:o}</option>)}
                 </select>
                 <span style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:12,color:B.gray}}>▾</span>
               </div>
