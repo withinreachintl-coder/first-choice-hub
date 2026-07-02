@@ -548,7 +548,28 @@ function OpenWO() {
   const [woId, setWoId]=useState("");
   const [savedForm, setSavedForm]=useState(null);
   const [savedTs, setSavedTs]=useState("");
+  const [locGroups, setLocGroups]=useState(LOCATION_GROUPS);
   const set=(k)=>(v)=>setForm(f=>({...f,[k]:v}));
+
+  // Single-source the Misc. Facilities/Properties group from the properties
+  // table; keep the hardcoded LOCATION_GROUPS as a cached fallback so the
+  // dropdown never breaks if the read fails.
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try {
+        const res=await fetch("/api/properties");
+        if (!res.ok) return;
+        const props=await res.json();
+        const addrs=(Array.isArray(props)?props:[]).map(p=>p.address).filter(Boolean);
+        if (!cancelled && addrs.length) {
+          setLocGroups(LOCATION_GROUPS.map(g=>
+            g.group==="Misc. Facilities/Properties" ? {...g, locations:addrs} : g));
+        }
+      } catch { /* keep hardcoded fallback */ }
+    })();
+    return ()=>{ cancelled=true; };
+  },[]);
 
   const validate=()=>{
     if (!form.location)          return "Please select a location.";
@@ -628,7 +649,7 @@ function OpenWO() {
       <Banner status={status}/>
 
       <div style={s.field}><Label required>Location</Label>
-        <SelectField value={form.location} onChange={set("location")} groups={LOCATION_GROUPS} placeholder="Select organization & location…"/>
+        <SelectField value={form.location} onChange={set("location")} groups={locGroups} placeholder="Select organization & location…"/>
       </div>
       <div style={s.field}><Label required>Your Name</Label>
         <FInput value={form.requesterName} onChange={set("requesterName")} placeholder="First and last name" autoComplete="name"/>
@@ -1241,10 +1262,143 @@ function Logo() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ROOT
 // ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// TAB — Ride-By (drive-by logging for land / vacant properties)
+// ═══════════════════════════════════════════════════════════════════════════════
+const today = () => new Date().toISOString().slice(0,10);
+
+function RideBy() {
+  const [properties, setProperties]=useState([]);
+  const [stats, setStats]=useState([]);
+  const [showAll, setShowAll]=useState(false);
+  const [sortBy, setSortBy]=useState("count"); // "count" | "recent"
+  const [form, setForm]=useState({ propertyId:"", occurredOn:today(), loggedBy:"", note:"", photo:null });
+  const [status, setStatus]=useState(null);
+  const set=(k)=>(v)=>setForm(f=>({...f,[k]:v}));
+
+  const loadStats=useCallback(async()=>{
+    try { const r=await fetch("/api/ride-bys"); if (r.ok) setStats(await r.json()); } catch {}
+  },[]);
+  useEffect(()=>{
+    (async()=>{ try { const r=await fetch("/api/properties"); if (r.ok) setProperties(await r.json()); } catch {} })();
+    loadStats();
+  },[loadStats]);
+
+  const isLandVacant=(c)=>/land|vacant/i.test(c||"");
+  const anyClassified=properties.some(p=>isLandVacant(p.classification));
+  // Default-filter to Land/vacant; fall back to show-all when nothing is classified.
+  const pickList=(showAll||!anyClassified) ? properties : properties.filter(p=>isLandVacant(p.classification));
+
+  const submit=async()=>{
+    if (!form.propertyId) { setStatus({type:"error",message:"Please select a property."}); return; }
+    const prop=properties.find(p=>p.id===form.propertyId);
+    setStatus({type:"loading",message:"Logging ride-by…"});
+    const payload={
+      propertyId:form.propertyId,
+      propertyLabel:prop?.address||"",
+      occurredOn:form.occurredOn||null,
+      loggedBy:form.loggedBy||"",
+      note:form.note||null,
+      photo:form.photo?{b64:form.photo.b64,name:form.photo.name}:null,
+    };
+    try {
+      const r=await fetch("/api/ride-bys",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setStatus({type:"success",message:`Ride-by logged for ${prop?.address||"property"}.`});
+      setForm(f=>({...f, note:"", photo:null }));
+      loadStats();
+    } catch(e) { setStatus({type:"error",message:`Failed: ${friendlyErr(e)}`}); }
+  };
+
+  const logged=stats.filter(s=>s.count>0).sort((a,b)=>
+    sortBy==="count" ? b.count-a.count : (new Date(b.lastOn||0)-new Date(a.lastOn||0)));
+
+  return (
+    <>
+      <div style={s.formHead}>
+        <span style={{...s.formTag,background:"#1e40af"}}>RIDE-BY</span>
+        <h1 style={s.formTitle}>Log a Ride-By</h1>
+        <p style={s.formSub}>Record a drive-by check on land / vacant properties.</p>
+      </div>
+
+      <Banner status={status}/>
+
+      <div style={s.field}><Label required>Property</Label>
+        <SelectField value={form.propertyId} onChange={set("propertyId")}
+          options={pickList.map(p=>({value:p.id,label:p.classification?`${p.address} · ${p.classification}`:p.address}))}
+          placeholder="Select a property…"/>
+        <button type="button" onClick={()=>setShowAll(v=>!v)}
+          style={{background:"none",border:"none",color:B.red,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",padding:"6px 0 0",alignSelf:"flex-start"}}>
+          {showAll?"Show land / vacant only":"Show all properties"}
+        </button>
+        {!anyClassified&&(
+          <p style={{margin:"4px 0 0",fontSize:12,color:B.gray,lineHeight:1.4}}>
+            No properties are classified yet — showing all. Add Land/vacant classifications to enable the default filter.
+          </p>
+        )}
+      </div>
+
+      <div style={s.field}><Label required>Date</Label>
+        <FInput value={form.occurredOn} onChange={set("occurredOn")} type="date"/>
+      </div>
+      <div style={s.field}><Label>Logged By <Opt/></Label>
+        <FInput value={form.loggedBy} onChange={set("loggedBy")} placeholder="Your name" autoComplete="name"/>
+      </div>
+      <div style={s.field}><Label>Note <Opt/></Label>
+        <FTextarea value={form.note} onChange={set("note")} rows={3} placeholder="Anything notable — condition, activity, issues…"/>
+      </div>
+      <div style={s.field}><Label>Photo <Opt/></Label>
+        <SinglePhoto photo={form.photo?.b64} name={form.photo?.name}
+          onCapture={(b64,name)=>set("photo")({b64,name})} onRemove={()=>set("photo")(null)}/>
+      </div>
+
+      <button type="button" onClick={submit} disabled={status?.type==="loading"}
+        style={{...s.submitBtn,background:"#1e40af",boxShadow:"0 4px 18px rgba(30,64,175,0.32)",
+          opacity:status?.type==="loading"?0.7:1,cursor:status?.type==="loading"?"not-allowed":"pointer"}}>
+        {status?.type==="loading"?"Logging…":"Log Ride-By"}
+      </button>
+
+      {/* Frequency view */}
+      <div style={{marginTop:26}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{fontSize:12,fontWeight:700,color:B.gray,letterSpacing:"0.05em"}}>RIDE-BY FREQUENCY</div>
+          <div style={{display:"flex",gap:6}}>
+            {[["count","Most"],["recent","Recent"]].map(([k,lbl])=>(
+              <button key={k} type="button" onClick={()=>setSortBy(k)}
+                style={{padding:"5px 10px",fontSize:12,fontWeight:600,borderRadius:8,cursor:"pointer",fontFamily:"inherit",
+                  border:`1.5px solid ${sortBy===k?B.red:B.border}`,background:sortBy===k?"#fff0f0":"#fff",
+                  color:sortBy===k?B.red:B.charcoal}}>{lbl}</button>
+            ))}
+          </div>
+        </div>
+        {logged.length===0?(
+          <p style={{fontSize:13,color:B.gray,margin:0}}>No ride-bys logged yet.</p>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {logged.map(sRow=>(
+              <div key={sRow.propertyId} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
+                background:B.white,border:`1.5px solid ${B.border}`,borderRadius:10,padding:"11px 14px"}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,color:B.charcoal,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sRow.address}</div>
+                  {sRow.lastOn&&<div style={{fontSize:12,color:B.gray,marginTop:2}}>Last: {new Date(String(sRow.lastOn).slice(0,10)+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>}
+                </div>
+                <div style={{flexShrink:0,minWidth:34,textAlign:"center",background:"#eff6ff",border:"1.5px solid #2563eb22",borderRadius:8,padding:"4px 10px"}}>
+                  <div style={{fontSize:18,fontWeight:800,color:"#1e40af",lineHeight:1}}>{sRow.count}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 const TABS = [
   { id:"dashboard", label:"Dashboard",     emoji:"📊" },
   { id:"open",      label:"Open WO",       emoji:"🔧" },
   { id:"close",     label:"Close WO",      emoji:"✅" },
+  { id:"rideby",    label:"Ride-By",       emoji:"🚗" },
   { id:"howto",     label:"How-To",        emoji:"📖" },
 ];
 
@@ -1305,6 +1459,7 @@ export default function FirstChoiceFacilitiesHub() {
           {tab==="dashboard" && <Dashboard/>}
           {tab==="open"      && <OpenWO/>}
           {tab==="close"     && <CloseWO/>}
+          {tab==="rideby"    && <RideBy/>}
           {tab==="howto"     && <HowToPage onClose={()=>setTab("dashboard")}/>}
         </main>
 
