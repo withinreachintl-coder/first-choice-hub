@@ -58,6 +58,32 @@ const genId    = () => {
 };
 const readFile = (f) => new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(f); });
 
+// Downscale + re-encode an image File to a JPEG data URL (longest side <= 1600px)
+// so the base64 body stays well under Vercel's ~4.5MB serverless limit. Falls
+// back to the raw file bytes for non-images or if canvas encoding fails.
+const MAX_IMG_EDGE = 1600;
+async function compressImage(f) {
+  if (!f || !f.type?.startsWith("image/")) return readFile(f);
+  const dataUrl = await readFile(f);
+  try {
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=dataUrl; });
+    const scale = Math.min(1, MAX_IMG_EDGE/Math.max(img.width,img.height));
+    const w = Math.round(img.width*scale), h = Math.round(img.height*scale);
+    const canvas = document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",0.72);
+  } catch { return dataUrl; }
+}
+// Swap a File's name to a .jpg extension (images are re-encoded to JPEG).
+const jpgName = (name) => (name||"photo").replace(/\.[^.]+$/,"")+".jpg";
+// Map a submit error to a user-friendly message (413 = body too large).
+const friendlyErr = (e) => /\b413\b/.test(e?.message||"")
+  ? "Photos too large — try fewer or smaller images."
+  : (e?.message||"Unknown error");
+
 // ─── PDF builder (returns base64 string AND triggers download) ────────────────
 async function buildPDF(form, id, ts, download = true) {
   const { jsPDF } = await import("jspdf");
@@ -287,8 +313,8 @@ function MultiPhoto({ photos, onChange }) {
   const handleFile = async(e) => {
     const f=e.target.files?.[0];
     if (!f||photos.length>=MAX_PHOTOS) return;
-    const b64=await readFile(f);
-    onChange([...photos,{b64,name:f.name}]);
+    const b64=await compressImage(f);
+    onChange([...photos,{b64,name:jpgName(f.name)}]);
     e.target.value="";
   };
   return (
@@ -322,7 +348,7 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
   const ref=useRef(null);
   const handleFile=async(e)=>{
     const f=e.target.files?.[0]; if(!f) return;
-    const b64=await readFile(f); onCapture(b64,f.name); e.target.value="";
+    const b64=await compressImage(f); onCapture(b64,jpgName(f.name)); e.target.value="";
   };
   return (
     <div>
@@ -567,7 +593,7 @@ function OpenWO() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setWoId(id); setSavedForm({...form,_type:"open"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
-    } catch(e) { setStatus({type:"error",message:`Submission failed: ${e.message}`}); }
+    } catch(e) { setStatus({type:"error",message:`Submission failed: ${friendlyErr(e)}`}); }
   };
 
   const handlePDF=useCallback(()=>buildPDF({...savedForm,_type:"open"},woId,savedTs,true),[savedForm,woId,savedTs]);
@@ -739,7 +765,7 @@ function CloseWO() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSavedForm({...form,_type:"close"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
-    } catch(e) { setStatus({type:"error",message:`Closure failed: ${e.message}`}); }
+    } catch(e) { setStatus({type:"error",message:`Closure failed: ${friendlyErr(e)}`}); }
   };
 
   const handlePDF=useCallback(()=>buildPDF({...savedForm,_type:"close"},savedForm.workOrderId,savedTs,true),[savedForm,savedTs]);
