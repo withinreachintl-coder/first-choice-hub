@@ -12,7 +12,7 @@ const LOCATION_GROUPS = [
   { group:"Burroughs Restaurant Group", locations:["Collierville","Dexter","Olive Branch","Oxford","Whitehaven"] },
   { group:"First Choice",               locations:["Main Office","Warehouse"] },
   { group:"R.S. Lewis and Sons Funeral Home", locations:["Austin Peay","Vance Avenue","Walnut Grove"] },
-  { group:"Misc. Facilities",           locations:["Location #1","Location #2","Location #3","Location #4","Location #5"] },
+  { group:"Misc. Facilities/Properties", locations:["2944 Walnut Grove NE","0 Racine St","185 Racine","0 Ponotoc","0 Tillman St","0 Vance Ave","300 S Fourth St","306 S Fourth St","314 S Fourth St","362 Vance Ave","374 Vance Ave","380 Vance Ave","3380 Pearson Rd","580 S Main St #102","492 S Main St","3651 Austin Peay Hwy","3906 Air Park St","0 S Ford St","961 S Ford St","971 S Ford St","973 S Ford St","972 S Ford St","977 S Ford St","1189 Englewood","0 Elvis Presley","4730 Elvis Presley","0 Lipford","0 Glankler","2486 Poplar Ave","3625 Austin Peay Hwy","0 Whitten Rd","2019 Whitten Rd","1715 Kendale","2436 Tori Street","1565 E McLemore","115 Union Avenue","180 S. G. Parkway","8075 Dexter","975 W. Poplar","2784 Calkins Cr., Cv., Germantown Tn"] },
 ];
 const CATEGORIES = [
   "HVAC / Climate Control","Plumbing / Water","Electrical / Lighting","Kitchen Equipment",
