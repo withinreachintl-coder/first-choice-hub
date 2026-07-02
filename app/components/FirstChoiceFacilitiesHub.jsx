@@ -1380,7 +1380,7 @@ function RideBy() {
                 background:B.white,border:`1.5px solid ${B.border}`,borderRadius:10,padding:"11px 14px"}}>
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:600,color:B.charcoal,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sRow.address}</div>
-                  {sRow.lastOn&&<div style={{fontSize:12,color:B.gray,marginTop:2}}>Last: {new Date(sRow.lastOn+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>}
+                  {sRow.lastOn&&<div style={{fontSize:12,color:B.gray,marginTop:2}}>Last: {new Date(String(sRow.lastOn).slice(0,10)+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>}
                 </div>
                 <div style={{flexShrink:0,minWidth:34,textAlign:"center",background:"#eff6ff",border:"1.5px solid #2563eb22",borderRadius:8,padding:"4px 10px"}}>
                   <div style={{fontSize:18,fontWeight:800,color:"#1e40af",lineHeight:1}}>{sRow.count}</div>

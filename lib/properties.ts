@@ -53,7 +53,7 @@ export async function rideByStats() {
   const rows = await query<Row>(
     `select p.id, p.address, p.classification,
             count(r.id)::int as cnt,
-            max(r.occurred_on) as last_on
+            to_char(max(r.occurred_on),'YYYY-MM-DD') as last_on
        from ${PROPS} p
        left join ${RIDES} r on r.property_id = p.id
       where p.active is not false
