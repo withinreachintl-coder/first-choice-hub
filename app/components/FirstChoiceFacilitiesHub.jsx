@@ -313,7 +313,7 @@ function MultiPhoto({ photos, onChange }) {
           <span style={{fontSize:12,color:B.gray}}>Tap to take or upload · rear camera preferred</span>
         </button>
       )}
-      <input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
+      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
   );
 }
@@ -341,7 +341,7 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
           </div>
         </div>
       )}
-      <input ref={ref} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleFile}/>
+      <input ref={ref} type="file" accept="image/*" style={{display:"none"}} onChange={handleFile}/>
     </div>
   );
 }
@@ -435,6 +435,7 @@ function HowTo({ onClose }) {
     { emoji:"📋", title:"Dashboard (Tab 1)", body:"The Dashboard pulls live work order data. It shows open vs. closed counts, priority breakdowns, and a filterable list of all work orders. Tap any card to expand its details. Use the filter bar to narrow by status, priority, or location. Data refreshes when you tap the ↻ button." },
     { emoji:"🔧", title:"Open a Work Order (Tab 2)", body:"Fill out all required fields (marked *) and tap Submit Request. A work order number is auto-generated (e.g. FCF-250601-4827). Submitting saves the work order, stores the PDF and any photos, emails the maintenance tech and supervisor, and sends a Slack alert for emergencies. You can also download the PDF directly from the success screen." },
     { emoji:"✅", title:"Close a Work Order (Tab 3)", body:"Enter the work order ID, the technician's name, completion notes, and any parts used. Select a closure status (Resolved, Closed, or Cancelled) and optionally attach a completion photo. Submitting updates the existing work order, saves a closure PDF, and sends a confirmation email to the supervisor." },
+    { emoji:"📎", title:"Receipts & Documents", body:"Attach a photo of a receipt directly to a work order when you open or close it — tap Attach Photo, then Take Photo or choose from your library. For a receipt that's a PDF or multi-page document, email it to wstine@burroughsrestaurantgroup.com with the work order number in the subject line (example: 'FCF-250601-4827 – receipt') so it's kept with that work order. In-app photo receipts are the standard; PDFs go by email." },
     { emoji:"⚠️", title:"Safety Hazard Flag", body:"When the Safety Hazard toggle is on, the request auto-escalates to Emergency regardless of the priority level selected. This triggers the highest-priority email and a Slack alert to the maintenance tech." },
     { emoji:"📁", title:"PDF & Photo Storage", body:"Every submitted work order PDF and photo is stored securely and linked from the work order. Closure PDFs are saved alongside the original. You never lose a record." },
     { emoji:"💡", title:"Tips", body:"• Use the Best Time to Access field so the tech knows when they can get in.\n• Attach a photo whenever possible — it speeds up diagnosis.\n• For time-sensitive repairs, set a Needed By date so it shows in the dashboard.\n• The dashboard is read-only — to update a status, submit a Close Work Order form.\n• Bookmark this app and tap Add to Home Screen for one-tap access from your phone." },
@@ -893,6 +894,9 @@ function CloseWO() {
       </div>
       <div style={s.field}><Label>Completion Photos <Opt/> (up to 3)</Label>
         <MultiPhoto photos={form.completionPhotos} onChange={v=>setForm(f=>({...f,completionPhotos:v}))}/>
+        <p style={{margin:"8px 0 0",fontSize:12,color:B.gray,lineHeight:1.4}}>
+          Tip: attach a photo of any parts receipt here. PDF receipts → email wstine@burroughsrestaurantgroup.com with the WO number in the subject.
+        </p>
       </div>
 
       <button type="button" onClick={handleSubmit}
