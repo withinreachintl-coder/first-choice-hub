@@ -45,7 +45,7 @@ const EMPTY_OPEN = {
   bestTimeToAccess:"", timeSensitive:false, neededByDate:"", photos:[],
 };
 const EMPTY_CLOSE = {
-  workOrderId:"", techName:"", completionNotes:"", partsUsed:"",
+  workOrderId:"", techName:"", completionNotes:"", partsUsed:"", costAmount:"",
   completionPhotos:[], status:"Resolved",
 };
 
@@ -57,6 +57,32 @@ const genId    = () => {
   return `FCF-${String(d.getFullYear()).slice(-2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${Math.floor(Math.random()*9000)+1000}`;
 };
 const readFile = (f) => new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(f); });
+
+// Downscale + re-encode an image File to a JPEG data URL (longest side <= 1600px)
+// so the base64 body stays well under Vercel's ~4.5MB serverless limit. Falls
+// back to the raw file bytes for non-images or if canvas encoding fails.
+const MAX_IMG_EDGE = 1600;
+async function compressImage(f) {
+  if (!f || !f.type?.startsWith("image/")) return readFile(f);
+  const dataUrl = await readFile(f);
+  try {
+    const img = await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=dataUrl; });
+    const scale = Math.min(1, MAX_IMG_EDGE/Math.max(img.width,img.height));
+    const w = Math.round(img.width*scale), h = Math.round(img.height*scale);
+    const canvas = document.createElement("canvas");
+    canvas.width=w; canvas.height=h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img,0,0,w,h);
+    return canvas.toDataURL("image/jpeg",0.72);
+  } catch { return dataUrl; }
+}
+// Swap a File's name to a .jpg extension (images are re-encoded to JPEG).
+const jpgName = (name) => (name||"photo").replace(/\.[^.]+$/,"")+".jpg";
+// Map a submit error to a user-friendly message (413 = body too large).
+const friendlyErr = (e) => /\b413\b/.test(e?.message||"")
+  ? "Photos too large — try fewer or smaller images."
+  : (e?.message||"Unknown error");
 
 // ─── PDF builder (returns base64 string AND triggers download) ────────────────
 async function buildPDF(form, id, ts, download = true) {
@@ -204,10 +230,10 @@ function Label({ children, required }) {
   );
 }
 
-function FInput({ value, onChange, placeholder, type="text", autoComplete="" }) {
+function FInput({ value, onChange, placeholder, type="text", autoComplete="", min, inputMode }) {
   return (
     <input type={type} value={value} onChange={e=>onChange(e.target.value)}
-      placeholder={placeholder} autoComplete={autoComplete} style={s.input} />
+      placeholder={placeholder} autoComplete={autoComplete} min={min} inputMode={inputMode} style={s.input} />
   );
 }
 
@@ -287,8 +313,8 @@ function MultiPhoto({ photos, onChange }) {
   const handleFile = async(e) => {
     const f=e.target.files?.[0];
     if (!f||photos.length>=MAX_PHOTOS) return;
-    const b64=await readFile(f);
-    onChange([...photos,{b64,name:f.name}]);
+    const b64=await compressImage(f);
+    onChange([...photos,{b64,name:jpgName(f.name)}]);
     e.target.value="";
   };
   return (
@@ -322,7 +348,7 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
   const ref=useRef(null);
   const handleFile=async(e)=>{
     const f=e.target.files?.[0]; if(!f) return;
-    const b64=await readFile(f); onCapture(b64,f.name); e.target.value="";
+    const b64=await compressImage(f); onCapture(b64,jpgName(f.name)); e.target.value="";
   };
   return (
     <div>
@@ -567,7 +593,7 @@ function OpenWO() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setWoId(id); setSavedForm({...form,_type:"open"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
-    } catch(e) { setStatus({type:"error",message:`Submission failed: ${e.message}`}); }
+    } catch(e) { setStatus({type:"error",message:`Submission failed: ${friendlyErr(e)}`}); }
   };
 
   const handlePDF=useCallback(()=>buildPDF({...savedForm,_type:"open"},woId,savedTs,true),[savedForm,woId,savedTs]);
@@ -727,6 +753,7 @@ function CloseWO() {
       workOrderId:form.workOrderId.trim().toUpperCase(),
       closedAt:ts, techName:form.techName,
       completionNotes:form.completionNotes, partsUsed:form.partsUsed||null,
+      costAmount:form.costAmount!==""&&!isNaN(Number(form.costAmount))?Number(form.costAmount):null,
       status:form.status,
       completionPhotos:form.completionPhotos.map(p=>({photo:p.b64,photoName:p.name})),
       completionPhotoCount:form.completionPhotos.length,
@@ -738,7 +765,7 @@ function CloseWO() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSavedForm({...form,_type:"close"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
-    } catch(e) { setStatus({type:"error",message:`Closure failed: ${e.message}`}); }
+    } catch(e) { setStatus({type:"error",message:`Closure failed: ${friendlyErr(e)}`}); }
   };
 
   const handlePDF=useCallback(()=>buildPDF({...savedForm,_type:"close"},savedForm.workOrderId,savedTs,true),[savedForm,savedTs]);
@@ -750,6 +777,7 @@ function CloseWO() {
           ["Status",      savedForm.status],
           ["Technician",  savedForm.techName],
           ...(savedForm.partsUsed?[["Parts Used",savedForm.partsUsed]]:[]),
+          ...(savedForm.costAmount!==""&&savedForm.costAmount!=null?[["Amount Spent",`$${Number(savedForm.costAmount).toFixed(2)}`]]:[]),
         ]}
         onReset={()=>{setForm(EMPTY_CLOSE);setSubmitted(false);setStatus(null);}}
         onPDF={handlePDF}
@@ -875,6 +903,9 @@ function CloseWO() {
       <div style={s.field}><Label>Parts / Materials Used <Opt/></Label>
         <FInput value={form.partsUsed} onChange={set("partsUsed")} placeholder="e.g. 3/4″ PVC coupling, belt drive, filter #16A…"/>
       </div>
+      <div style={s.field}><Label>Amount Spent (parts/job) <Opt/></Label>
+        <FInput value={form.costAmount} onChange={set("costAmount")} type="number" min={0} inputMode="decimal" placeholder="e.g. 149.50"/>
+      </div>
       <div style={s.field}><Label required>Closure Status</Label>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
           {CLOSE_STATUSES.map(st=>{
@@ -962,6 +993,19 @@ function Dashboard() {
 
   const allLocations=[...new Set(orders.map(o=>o.locationSub||o.location).filter(Boolean))].sort();
 
+  // Spend rollups (read-only) from already-loaded work orders.
+  const totalSpend=orders.reduce((sum,o)=>sum+(Number(o.costAmount)||0),0);
+  const spendByLocation=Object.entries(
+    orders.reduce((acc,o)=>{
+      const amt=Number(o.costAmount)||0;
+      if (!amt) return acc;
+      const loc=o.location||o.locationSub||"Unspecified";
+      acc[loc]=(acc[loc]||0)+amt;
+      return acc;
+    },{})
+  ).sort((a,b)=>b[1]-a[1]);
+  const usd=n=>n.toLocaleString("en-US",{style:"currency",currency:"USD"});
+
   return (
     <div style={{display:"flex",flexDirection:"column",gap:0}}>
       {/* Title row */}
@@ -1025,6 +1069,26 @@ function Dashboard() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Spend summary */}
+          {totalSpend>0&&(
+            <div style={{background:B.white,border:`1.5px solid ${B.border}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:spendByLocation.length?10:0}}>
+                <div style={{fontSize:12,fontWeight:700,color:B.gray,letterSpacing:"0.05em"}}>TOTAL SPEND</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#166534",lineHeight:1}}>{usd(totalSpend)}</div>
+              </div>
+              {spendByLocation.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {spendByLocation.map(([loc,amt])=>(
+                    <div key={loc} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:13,color:B.charcoal}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{loc}</span>
+                      <span style={{fontWeight:700,flexShrink:0}}>{usd(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
