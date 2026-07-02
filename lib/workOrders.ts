@@ -57,6 +57,7 @@ async function mapRow(r: Row) {
     closedAt: formatTs(r.closed_at as string),
     completionNotes: r.completion_notes ?? "",
     partsUsed: r.parts_used ?? "",
+    costAmount: r.cost_amount != null ? Number(r.cost_amount) : null,
     completionPhotoUrl: (await signedUrls((r.completion_photo_urls as string[]) ?? []))[0] ?? "",
     closurePdfUrl: await signedUrl((r.closure_pdf_url as string) ?? ""),
   };
@@ -145,7 +146,8 @@ export async function closeWorkOrder(id: string, p: Record<string, unknown>) {
        parts_used = $5,
        completion_photo_count = $6,
        completion_photo_urls = $7,
-       closure_pdf_url = $8
+       closure_pdf_url = $8,
+       cost_amount = $9
      where work_order_id = $1
      returning work_order_id`,
     [
@@ -157,6 +159,7 @@ export async function closeWorkOrder(id: string, p: Record<string, unknown>) {
       photos.length,
       photoKeys,
       pdfKey || null,
+      p.costAmount ?? null,
     ]
   );
   return rows.length > 0;
