@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/reports/send?auto=1&offset=-1",
+      "schedule": "0 12 * * 1"
+    }
+  ]
+}
