@@ -1,10 +1,17 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
+import Reports from "./Reports";
+import {
+  C, SP, R, EL, TYPE, NUM, FONT, MONO,
+  Icon, Card, Eyebrow, Kpi, Chip, Dot, StackBar, EmptyState,
+} from "../ui/theme";
 
-// ─── Brand ────────────────────────────────────────────────────────────────────
+// ─── Brand ───────────────────────────────────────────────────────────────────
+// Kept as `B` so every existing reference still resolves. Values now come from
+// the shared design system in app/ui/theme.js. Red and charcoal are unchanged.
 const B = {
-  red:"#CC0000", redDark:"#a30000", charcoal:"#2d2d2d",
-  gray:"#6b7280", border:"#e0e0e0", bg:"#f4f4f5", white:"#fff",
+  red: C.red, redDark: C.redDark, charcoal: C.charcoal,
+  gray: C.ink3, border: C.line, bg: C.bg, white: C.surface,
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -23,20 +30,20 @@ const ACCESS_TIMES = [
   "Any time","Before 11 AM","After 2 PM","After close (evenings only)","Weekends only","By appointment — contact me first",
 ];
 const PRIORITIES = [
-  { value:"low",       label:"Low",       emoji:"🟢", badge:"#16a34a", selBg:"#dcfce7", border:"#bbf7d0", color:"#166534", descr:"Non-urgent · schedule when convenient" },
-  { value:"medium",    label:"Medium",    emoji:"🟡", badge:"#d97706", selBg:"#fef3c7", border:"#fde68a", color:"#92400e", descr:"Needs attention within 48 hrs" },
-  { value:"high",      label:"High",      emoji:"🔴", badge:"#dc2626", selBg:"#fee2e2", border:"#fecaca", color:"#991b1b", descr:"Impacting operations · today" },
-  { value:"emergency", label:"Emergency", emoji:"🚨", badge:"#7f1d1d", selBg:"#7f1d1d", border:"#450a0a", color:"#fff", dark:true, descr:"Immediate safety / service threat" },
+  { value:"low",       label:"Low",       badge:"#15803D", selBg:"#F0FDF4", border:"#BBF7D0", color:"#14532D", descr:"Non-urgent · schedule when convenient" },
+  { value:"medium",    label:"Medium",    badge:"#B45309", selBg:"#FFFBEB", border:"#FDE68A", color:"#78350F", descr:"Needs attention within 48 hrs" },
+  { value:"high",      label:"High",      badge:"#CC0000", selBg:"#FFF1F1", border:"#FECACA", color:"#8C0000", descr:"Impacting operations · today" },
+  { value:"emergency", label:"Emergency", badge:"#7F1D1D", selBg:"#7F1D1D", border:"#450A0A", color:"#fff", dark:true, descr:"Immediate safety / service threat" },
 ];
 const CLOSE_STATUSES = ["Resolved","Closed","Cancelled"];
 const STATUS_META = {
-  "Open":         { color:"#2563eb", bg:"#eff6ff" },
-  "Acknowledged": { color:"#7c3aed", bg:"#f5f3ff" },
-  "In Progress":  { color:"#d97706", bg:"#fffbeb" },
-  "On Hold":      { color:"#6b7280", bg:"#f9fafb" },
-  "Resolved":     { color:"#16a34a", bg:"#f0fdf4" },
-  "Closed":       { color:"#374151", bg:"#f3f4f6" },
-  "Cancelled":    { color:"#9ca3af", bg:"#f9fafb" },
+  "Open":         { color:"#1D4ED8", bg:"#EFF6FF", line:"#BFDBFE" },
+  "Acknowledged": { color:"#6D28D9", bg:"#F5F3FF", line:"#DDD6FE" },
+  "In Progress":  { color:"#B45309", bg:"#FFFBEB", line:"#FDE68A" },
+  "On Hold":      { color:"#52525B", bg:"#FAFAFB", line:"#E4E4E7" },
+  "Resolved":     { color:"#15803D", bg:"#F0FDF4", line:"#BBF7D0" },
+  "Closed":       { color:"#3F3F46", bg:"#F4F4F5", line:"#E4E4E7" },
+  "Cancelled":    { color:"#9CA3AF", bg:"#FAFAFB", line:"#E4E4E7" },
 };
 
 const EMPTY_OPEN = {
@@ -262,7 +269,7 @@ function SelectField({ value, onChange, groups, options, placeholder }) {
           : <option key={o.value} value={o.value}>{o.label}</option>
         )}
       </select>
-      <span style={s.chevron}>▾</span>
+      <span style={s.chevron}><Icon name="chevronDown" size={16} color={C.ink4}/></span>
     </div>
   );
 }
@@ -276,7 +283,7 @@ function PriorityGrid({ value, onChange }) {
           <button key={p.value} type="button" onClick={()=>onChange(p.value)}
             style={{...s.priorityBtn, background:sel?p.selBg:"#fff", borderColor:sel?p.badge:B.border,
               boxShadow:sel?`0 0 0 2px ${p.badge}`:"0 1px 3px rgba(0,0,0,0.06)"}}>
-            <span style={{fontSize:18,lineHeight:1,flexShrink:0}}>{p.emoji}</span>
+            <span style={{marginTop:5,flexShrink:0}}><Dot color={p.dark?"#fff":p.badge} size={9} ring={sel?`${p.badge}22`:null}/></span>
             <div style={{minWidth:0}}>
               <div style={{fontSize:14,fontWeight:700,color:sel?(p.dark?"#fff":p.color):B.charcoal,marginBottom:2}}>{p.label}</div>
               <div style={{fontSize:11,color:sel&&p.dark?"#fca5a5":B.gray,lineHeight:1.3}}>{p.descr}</div>
@@ -288,14 +295,17 @@ function PriorityGrid({ value, onChange }) {
   );
 }
 
-function Toggle({ value, onChange, label, desc, activeColor=B.red, activeIcon="⚠️", inactiveIcon="🔲" }) {
+function Toggle({ value, onChange, label, desc, activeColor=B.red, activeIcon="alert" }) {
   return (
     <button type="button" onClick={()=>onChange(!value)}
       style={{...s.toggleBtn,
         background:value?"#fff5f5":"#fafafa",
         borderColor:value?activeColor:B.border,
         boxShadow:value?`0 0 0 2px ${activeColor}33`:"0 1px 3px rgba(0,0,0,0.06)"}}>
-      <span style={{fontSize:22,flexShrink:0}}>{value?activeIcon:inactiveIcon}</span>
+      <span style={{width:34,height:34,borderRadius:R.sm,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+        background:value?`${activeColor}14`:C.surfaceAlt,border:`1px solid ${value?`${activeColor}33`:C.line}`}}>
+        <Icon name={activeIcon} size={17} color={value?activeColor:C.ink4}/>
+      </span>
       <div style={{textAlign:"left",flex:1}}>
         <div style={{fontWeight:700,fontSize:14,color:value?activeColor:B.charcoal}}>{label}</div>
         <div style={{fontSize:12,color:B.gray,marginTop:2,lineHeight:1.4}}>{desc}</div>
@@ -324,7 +334,7 @@ function MultiPhoto({ photos, onChange }) {
           {photos.map((p,i)=>(
             <div key={i} style={s.thumbWrap}>
               <img src={p.b64} alt={`Photo ${i+1}`} style={s.thumbImg}/>
-              <button type="button" onClick={()=>onChange(photos.filter((_,j)=>j!==i))} style={s.thumbX}>✕</button>
+              <button type="button" aria-label="Remove photo" onClick={()=>onChange(photos.filter((_,j)=>j!==i))} style={s.thumbX}><Icon name="close" size={12} color="#fff" strokeWidth={2.25}/></button>
               <div style={s.thumbN}>{i+1}</div>
             </div>
           ))}
@@ -332,7 +342,7 @@ function MultiPhoto({ photos, onChange }) {
       )}
       {photos.length<MAX_PHOTOS && (
         <button type="button" onClick={()=>ref.current?.click()} style={s.photoBtn}>
-          <span style={{fontSize:26}}>📷</span>
+          <span style={s.photoIcon}><Icon name="camera" size={19} color={C.ink3}/></span>
           <span style={{fontWeight:600,color:B.charcoal}}>
             {photos.length===0?"Attach Photo":`Add Another (${photos.length}/${MAX_PHOTOS})`}
           </span>
@@ -354,7 +364,7 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
     <div>
       {!photo ? (
         <button type="button" onClick={()=>ref.current?.click()} style={s.photoBtn}>
-          <span style={{fontSize:26}}>📷</span>
+          <span style={s.photoIcon}><Icon name="camera" size={19} color={C.ink3}/></span>
           <span style={{fontWeight:600,color:B.charcoal}}>Attach Completion Photo</span>
           <span style={{fontSize:12,color:B.gray}}>Optional · shows finished work</span>
         </button>
@@ -362,8 +372,12 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
         <div style={{borderRadius:10,overflow:"hidden",border:`1.5px solid ${B.border}`}}>
           <img src={photo} alt="Completion" style={{width:"100%",maxHeight:220,objectFit:"cover",display:"block"}}/>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:"#fafafa",borderTop:`1px solid ${B.border}`}}>
-            <span style={{fontSize:13,color:"#555",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"75%"}}>📎 {name}</span>
-            <button type="button" onClick={onRemove} style={{background:"none",border:"none",color:B.red,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✕ Remove</button>
+            <span style={{display:"flex",alignItems:"center",gap:7,...TYPE.small,color:C.ink2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"75%"}}>
+              <Icon name="doc" size={14} color={C.ink4}/>{name}
+            </span>
+            <button type="button" onClick={onRemove} style={{display:"flex",alignItems:"center",gap:5,background:"none",border:"none",color:B.red,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              <Icon name="close" size={13}/> Remove
+            </button>
           </div>
         </div>
       )}
@@ -375,39 +389,32 @@ function SinglePhoto({ photo, name, onCapture, onRemove }) {
 function Banner({ status }) {
   if (!status) return null;
   const cfg={
-    error:  {bg:"#fff5f5",bc:"#fecaca",color:"#991b1b",icon:"❌"},
-    success:{bg:"#f0fdf4",bc:"#bbf7d0",color:"#166534",icon:"✅"},
-    loading:{bg:"#eff6ff",bc:"#bfdbfe",color:"#1e40af",icon:null},
+    error:  {bg:C.redSoft,   bc:"#FECACA", color:"#8C0000", icon:"alert"},
+    success:{bg:C.greenSoft, bc:"#BBF7D0", color:C.green,   icon:"checkCircle"},
+    loading:{bg:C.blueSoft,  bc:"#BFDBFE", color:"#1D4ED8", icon:null},
   }[status.type]||{};
   return (
-    <div style={{display:"flex",alignItems:"center",gap:10,padding:"13px 14px",borderRadius:10,
-      border:`1.5px solid ${cfg.bc}`,background:cfg.bg,color:cfg.color,fontSize:14,fontWeight:500,marginBottom:20}}>
-      {cfg.icon && <span>{cfg.icon}</span>}
+    <div role="status" style={{display:"flex",alignItems:"center",gap:10,padding:`${SP.md}px ${SP.base}px`,borderRadius:R.md,
+      border:`1px solid ${cfg.bc}`,background:cfg.bg,color:cfg.color,...TYPE.smallStrong,fontSize:13.5,marginBottom:SP.lg}}>
+      {cfg.icon && <Icon name={cfg.icon} size={17} color={cfg.color}/>}
       {status.type==="loading" && <span style={s.spin}/>}
       <span>{status.message}</span>
     </div>
   );
 }
 
-function StatusPill({ status, size=12 }) {
-  const m=STATUS_META[status]||{color:"#6b7280",bg:"#f9fafb"};
-  return (
-    <span style={{padding:"2px 9px",borderRadius:20,background:m.bg,color:m.color,
-      fontSize:size,fontWeight:700,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>
-      {status}
-    </span>
-  );
+function StatusPill({ status }) {
+  const m=STATUS_META[status]||{color:C.ink3,bg:C.surfaceAlt,line:C.line};
+  return <Chip color={m.color} bg={m.bg} border={m.line}>{status}</Chip>;
 }
 
 function PriorityPill({ priority }) {
   const p=getPri(priority);
   if (!p) return null;
   return (
-    <span style={{padding:"2px 9px",borderRadius:20,background:p.dark?p.badge:"#fff",
-      color:p.dark?"#fff":p.color,border:`1.5px solid ${p.badge}`,
-      fontSize:12,fontWeight:700,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>
-      {p.emoji} {p.label}
-    </span>
+    <Chip color={p.dark?"#fff":p.color} bg={p.dark?p.badge:C.surface} border={p.badge}>
+      <Dot color={p.dark?"#fff":p.badge} size={6}/>{p.label}
+    </Chip>
   );
 }
 
@@ -437,8 +444,9 @@ function HowTo({ onClose }) {
             padding:"12px 14px",background:open?B.charcoal:"#fafafa",border:"none",
             cursor:"pointer",fontFamily:"inherit",gap:10}}>
           <span style={{fontSize:14,fontWeight:700,color:open?"#fff":B.charcoal}}>{icon} {label}</span>
-          <span style={{fontSize:13,color:open?"#ccc":B.gray,transition:"transform 0.2s",
-            display:"inline-block",transform:open?"rotate(180deg)":"rotate(0deg)"}}>▼</span>
+          <span style={{display:"inline-flex",transition:"transform 0.2s",transform:open?"rotate(180deg)":"rotate(0deg)"}}>
+            <Icon name="chevronDown" size={15} color={open?"#D4D4D8":C.ink4}/>
+          </span>
         </button>
         {open && (
           <div style={{padding:"14px 14px 16px",display:"flex",flexDirection:"column",gap:10}}>
@@ -458,13 +466,13 @@ function HowTo({ onClose }) {
   };
 
   const sections=[
-    { emoji:"📋", title:"Dashboard (Tab 1)", body:"The Dashboard pulls live work order data. It shows open vs. closed counts, priority breakdowns, and a filterable list of all work orders. Tap any card to expand its details. Use the filter bar to narrow by status, priority, or location. Data refreshes when you tap the ↻ button." },
-    { emoji:"🔧", title:"Open a Work Order (Tab 2)", body:"Fill out all required fields (marked *) and tap Submit Request. A work order number is auto-generated (e.g. FCF-250601-4827). Submitting saves the work order, stores the PDF and any photos, emails the maintenance tech and supervisor, and sends a Slack alert for emergencies. You can also download the PDF directly from the success screen." },
-    { emoji:"✅", title:"Close a Work Order (Tab 3)", body:"Enter the work order ID, the technician's name, completion notes, and any parts used. Select a closure status (Resolved, Closed, or Cancelled) and optionally attach a completion photo. Submitting updates the existing work order, saves a closure PDF, and sends a confirmation email to the supervisor." },
-    { emoji:"📎", title:"Receipts & Documents", body:"Attach a photo of a receipt directly to a work order when you open or close it — tap Attach Photo, then Take Photo or choose from your library. For a receipt that's a PDF or multi-page document, email it to wstine@burroughsrestaurantgroup.com with the work order number in the subject line (example: 'FCF-250601-4827 – receipt') so it's kept with that work order. In-app photo receipts are the standard; PDFs go by email." },
-    { emoji:"⚠️", title:"Safety Hazard Flag", body:"When the Safety Hazard toggle is on, the request auto-escalates to Emergency regardless of the priority level selected. This triggers the highest-priority email and a Slack alert to the maintenance tech." },
-    { emoji:"📁", title:"PDF & Photo Storage", body:"Every submitted work order PDF and photo is stored securely and linked from the work order. Closure PDFs are saved alongside the original. You never lose a record." },
-    { emoji:"💡", title:"Tips", body:"• Use the Best Time to Access field so the tech knows when they can get in.\n• Attach a photo whenever possible — it speeds up diagnosis.\n• For time-sensitive repairs, set a Needed By date so it shows in the dashboard.\n• The dashboard is read-only — to update a status, submit a Close Work Order form.\n• Bookmark this app and tap Add to Home Screen for one-tap access from your phone." },
+    { icon:"gauge", title:"Dashboard", body:"The Dashboard pulls live work order data. It shows open vs. closed counts, priority breakdowns, and a filterable list of all work orders. Tap any card to expand its details. Use the filter bar to narrow by status, priority, or location. Data refreshes when you tap the ↻ button." },
+    { icon:"wrench", title:"Open a Work Order", body:"Fill out all required fields (marked *) and tap Submit Request. A work order number is auto-generated (e.g. FCF-250601-4827). Submitting saves the work order, stores the PDF and any photos, emails the maintenance tech and supervisor, and sends a Slack alert for emergencies. You can also download the PDF directly from the success screen." },
+    { icon:"checkCircle", title:"Close a Work Order", body:"Enter the work order ID, the technician's name, completion notes, and any parts used. Select a closure status (Resolved, Closed, or Cancelled) and optionally attach a completion photo. Submitting updates the existing work order, saves a closure PDF, and sends a confirmation email to the supervisor." },
+    { icon:"doc", title:"Receipts & Documents", body:"Attach a photo of a receipt directly to a work order when you open or close it — tap Attach Photo, then Take Photo or choose from your library. For a receipt that's a PDF or multi-page document, email it to wstine@burroughsrestaurantgroup.com with the work order number in the subject line (example: 'FCF-250601-4827 – receipt') so it's kept with that work order. In-app photo receipts are the standard; PDFs go by email." },
+    { icon:"alert", title:"Safety Hazard Flag", body:"When the Safety Hazard toggle is on, the request auto-escalates to Emergency regardless of the priority level selected. This triggers the highest-priority email and a Slack alert to the maintenance tech." },
+    { icon:"doc", title:"PDF & Photo Storage", body:"Every submitted work order PDF and photo is stored securely and linked from the work order. Closure PDFs are saved alongside the original. You never lose a record." },
+    { icon:"chart", title:"Tips", body:"• Use the Best Time to Access field so the tech knows when they can get in.\n• Attach a photo whenever possible — it speeds up diagnosis.\n• For time-sensitive repairs, set a Needed By date so it shows in the dashboard.\n• The dashboard is read-only — to update a status, submit a Close Work Order form.\n• Bookmark this app and tap Add to Home Screen for one-tap access from your phone." },
   ];
   return (
     <div style={{...s.overlay,alignItems:"flex-start",overflowY:"auto"}} onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -475,7 +483,7 @@ function HowTo({ onClose }) {
             <div style={{fontWeight:800,fontSize:20,color:B.charcoal}}>📖 How-To Guide</div>
             <div style={{fontSize:13,color:B.gray,marginTop:2}}>First Choice Facilities Hub</div>
           </div>
-          <button onClick={onClose} style={s.closeBtn}>✕</button>
+          <button onClick={onClose} aria-label="Close" style={s.closeBtn}><Icon name="close" size={15} color={C.ink2}/></button>
         </div>
 
         <p style={{fontSize:13,color:B.gray,margin:"0 0 20px",lineHeight:1.5}}>
@@ -485,7 +493,7 @@ function HowTo({ onClose }) {
         {/* ── Getting Started ── */}
         <div style={{marginBottom:22,paddingBottom:22,borderBottom:`1px solid ${B.border}`}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-            <span style={{fontSize:22}}>📱</span>
+            <span style={s.secIcon}><Icon name="chevronRight" size={16} color={C.ink2}/></span>
             <span style={{fontWeight:700,fontSize:15,color:B.charcoal}}>Getting Started</span>
           </div>
           <p style={{fontSize:14,color:"#444",lineHeight:1.6,margin:"0 0 12px"}}>
@@ -498,7 +506,7 @@ function HowTo({ onClose }) {
         {sections.map((sec,i)=>(
           <div key={i} style={{marginBottom:22,paddingBottom:22,borderBottom:i<sections.length-1?`1px solid ${B.border}`:"none"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-              <span style={{fontSize:22}}>{sec.emoji}</span>
+              <span style={s.secIcon}><Icon name={sec.icon} size={16} color={C.ink2}/></span>
               <span style={{fontWeight:700,fontSize:15,color:B.charcoal}}>{sec.title}</span>
             </div>
             <p style={{fontSize:14,color:"#444",lineHeight:1.65,margin:0,whiteSpace:"pre-line"}}>{sec.body}</p>
@@ -514,7 +522,10 @@ function HowTo({ onClose }) {
 function SuccessScreen({ id, label, fields, onReset, onPDF, resetLabel="Submit Another" }) {
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",paddingTop:28}}>
-      <div style={{fontSize:60,lineHeight:1,marginBottom:14}}>✅</div>
+      <div style={{width:62,height:62,borderRadius:31,background:C.greenSoft,border:`1px solid #BBF7D0`,
+        display:"flex",alignItems:"center",justifyContent:"center",marginBottom:SP.base}}>
+        <Icon name="check" size={29} color={C.green} strokeWidth={2.5}/>
+      </div>
       <h2 style={{fontSize:24,fontWeight:800,color:B.charcoal,margin:"0 0 6px"}}>{label}</h2>
       <p style={{color:B.gray,margin:"0 0 24px",fontSize:15}}>Work order {id} has been logged.</p>
       <div style={{width:"100%",borderRadius:12,border:`1.5px solid ${B.border}`,background:B.white,overflow:"hidden",marginBottom:20}}>
@@ -531,7 +542,7 @@ function SuccessScreen({ id, label, fields, onReset, onPDF, resetLabel="Submit A
         ):null)}
       </div>
       <button onClick={onPDF} style={{...s.btnRed,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-        ⬇️ Download PDF
+        <Icon name="download" size={17} color="#fff"/> Download PDF
       </button>
       <button onClick={onReset} style={s.btnOutline}>{resetLabel}</button>
     </div>
@@ -626,10 +637,10 @@ function OpenWO() {
         fields={[
           ["Location",    savedForm.location],
           ["Category",    savedForm.category],
-          ["Priority",    pri?`${pri.emoji} ${pri.label}`:""],
+          ["Priority",    pri?pri.label:""],
           ["Submitted By",savedForm.requesterName],
           ...(savedForm.contactMethod?[["Contact",savedForm.contactMethod]]:[]),
-          ...(savedForm.safetyHazard?[["Safety Hazard","⚠️ Flagged — escalated"]]:[]),
+          ...(savedForm.safetyHazard?[["Safety Hazard","Flagged — escalated"]]:[]),
           ...(savedForm.timeSensitive&&savedForm.neededByDate?[["Needed By",new Date(savedForm.neededByDate+"T12:00:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})]]:[]),
         ]}
         onReset={()=>{setForm(EMPTY_OPEN);setSubmitted(false);setStatus(null);}}
@@ -671,7 +682,7 @@ function OpenWO() {
         <Toggle value={form.safetyHazard} onChange={set("safetyHazard")}
           label="Flag as Safety Hazard"
           desc={form.safetyHazard?"Flagged — auto-escalates to Emergency regardless of priority.":"Tap if this poses a risk to staff or customers."}
-          activeColor={B.red} activeIcon="⚠️"/>
+          activeColor={B.red} activeIcon="alert"/>
       </div>
       <div style={s.field}><Label>Best Time to Access <Opt/></Label>
         <SelectField value={form.bestTimeToAccess} onChange={set("bestTimeToAccess")} options={ACCESS_TIMES} placeholder="Select best time…"/>
@@ -828,7 +839,7 @@ function CloseWO() {
                 display:"flex",justifyContent:"space-between",alignItems:"center",
                 transition:"border-color 0.15s",color:form.workOrderId?B.charcoal:B.gray}}>
               <span>{form.workOrderId||"Select an open work order…"}</span>
-              <span style={{fontSize:12,color:B.gray,flexShrink:0,marginLeft:8}}>{woDropdownOpen?"▲":"▼"}</span>
+              <Icon name={woDropdownOpen?"chevronUp":"chevronDown"} size={16} color={C.ink4} style={{marginLeft:8}}/>
             </button>
 
             {woDropdownOpen&&(
@@ -861,7 +872,7 @@ function CloseWO() {
                         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                           <span style={{fontFamily:"monospace",fontWeight:700,color:B.charcoal}}>{o.workOrderId}</span>
                           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                            {pri&&<span style={{fontSize:11}}>{pri.emoji}</span>}
+                            {pri&&<Dot color={pri.badge} size={7}/>}
                             <StatusPill status={o.status||"Open"}/>
                           </div>
                         </div>
@@ -886,7 +897,7 @@ function CloseWO() {
           <>
             <FInput value={form.workOrderId} onChange={v=>set("workOrderId")(v.toUpperCase())} placeholder="FCF-YYMMDD-XXXX"/>
             <div style={{background:"#fffbeb",border:"1.5px solid #fde68a",borderRadius:10,padding:"10px 12px",marginTop:8,display:"flex",gap:8,alignItems:"flex-start"}}>
-              <span style={{fontSize:16,flexShrink:0}}>💡</span>
+              <Icon name="alert" size={15} color="#B45309" style={{marginTop:1}}/>
               <p style={{margin:0,fontSize:12,color:"#92400e",lineHeight:1.4}}>
                 {woLoading?"Loading open work orders…":"Enter the Work Order ID as it appears on the PDF, or pick from the list of open work orders."}
               </p>
@@ -1038,10 +1049,10 @@ function Dashboard() {
             {lastRefresh?`Last updated ${lastRefresh}`:"Live work order tracking"}
           </p>
         </div>
-        <button onClick={fetchData} disabled={loading}
-          style={{background:"none",border:`1.5px solid ${B.border}`,borderRadius:8,padding:"8px 12px",
-            fontSize:18,cursor:"pointer",color:loading?"#ccc":B.charcoal,marginTop:4}}>
-          {loading?"⏳":"↻"}
+        <button onClick={fetchData} disabled={loading} aria-label="Refresh"
+          style={{...s.iconBtn,marginTop:4,opacity:loading?0.5:1,cursor:loading?"wait":"pointer"}}>
+          <Icon name="refresh" size={16} color={C.ink2}
+            style={{animation:loading?"fc-spin 1s linear infinite":"none"}}/>
         </button>
       </div>
 
@@ -1051,66 +1062,58 @@ function Dashboard() {
       {/* Stat cards */}
       {orders.length>0&&(
         <>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-            {[
-              {label:"Open",      value:openOrders.length,   color:"#2563eb", bg:"#eff6ff"},
-              {label:"Closed",    value:closedOrders.length, color:"#166534", bg:"#f0fdf4"},
-              {label:"Emergency", value:emergencyOpen.length, color:"#7f1d1d", bg:"#fef2f2"},
-              {label:"Total",     value:orders.length,        color:B.charcoal,bg:"#f3f4f6"},
-            ].map(c=>(
-              <div key={c.label} style={{background:c.bg,border:`1.5px solid ${c.color}22`,borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:28,fontWeight:800,color:c.color,lineHeight:1}}>{c.value}</div>
-                <div style={{fontSize:12,fontWeight:600,color:c.color,marginTop:3,opacity:0.8}}>{c.label}</div>
-              </div>
-            ))}
+          <div className="fc-kpi" style={s.kpiGrid}>
+            <Kpi label="Open"      value={openOrders.length}    accent={C.blue}     icon="wrench"
+                 sub={orders.length?`${Math.round((openOrders.length/orders.length)*100)}% of all work orders`:null}/>
+            <Kpi label="Closed"    value={closedOrders.length}  accent={C.green}    icon="checkCircle"/>
+            <Kpi label="Emergency" value={emergencyOpen.length} accent={emergencyOpen.length?C.crimson:C.ink4} icon="alert"
+                 sub={emergencyOpen.length?"Needs attention now":"None open"}/>
+            <Kpi label="Total"     value={orders.length}        accent={C.charcoal} icon="chart"/>
           </div>
 
           {/* Priority breakdown bar */}
           {openOrders.length>0&&(
-            <div style={{background:B.white,border:`1.5px solid ${B.border}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-              <div style={{fontSize:12,fontWeight:700,color:B.gray,marginBottom:10,letterSpacing:"0.05em"}}>OPEN BY PRIORITY</div>
-              <div style={{display:"flex",gap:6,marginBottom:10}}>
-                {PRIORITIES.map(p=>{
-                  const cnt=openOrders.filter(o=>o.priority===p.value).length;
-                  if (!cnt) return null;
-                  const pct=Math.round((cnt/openOrders.length)*100);
-                  return (
-                    <div key={p.value} style={{flex:pct,background:p.badge,borderRadius:4,height:8,minWidth:8,transition:"flex 0.4s"}}/>
-                  );
-                })}
-              </div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px"}}>
+            <Card style={{marginBottom:SP.base}}>
+              <Eyebrow style={{marginBottom:SP.md}}>Open by priority</Eyebrow>
+              <StackBar segments={PRIORITIES.map(p=>({
+                label:p.label, color:p.badge,
+                value:openOrders.filter(o=>o.priority===p.value).length,
+              }))}/>
+              <div style={{display:"flex",flexWrap:"wrap",gap:`${SP.sm}px ${SP.base}px`,marginTop:SP.md}}>
                 {PRIORITIES.map(p=>{
                   const cnt=openOrders.filter(o=>o.priority===p.value).length;
                   if (!cnt) return null;
                   return (
-                    <span key={p.value} style={{fontSize:12,color:B.gray}}>
-                      <span style={{color:p.badge,fontWeight:700}}>{p.emoji} {cnt}</span> {p.label}
+                    <span key={p.value} style={{display:"inline-flex",alignItems:"center",gap:6,...TYPE.small,color:C.ink3}}>
+                      <Dot color={p.badge} size={7}/>
+                      <b style={{color:C.ink,fontWeight:700,...NUM}}>{cnt}</b> {p.label}
                     </span>
                   );
                 })}
               </div>
-            </div>
+            </Card>
           )}
 
           {/* Spend summary */}
           {totalSpend>0&&(
-            <div style={{background:B.white,border:`1.5px solid ${B.border}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:spendByLocation.length?10:0}}>
-                <div style={{fontSize:12,fontWeight:700,color:B.gray,letterSpacing:"0.05em"}}>TOTAL SPEND</div>
-                <div style={{fontSize:22,fontWeight:800,color:"#166534",lineHeight:1}}>{usd(totalSpend)}</div>
+            <Card style={{marginBottom:SP.base}}>
+              <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:SP.md,
+                marginBottom:spendByLocation.length?SP.md:0}}>
+                <Eyebrow>Total recorded spend</Eyebrow>
+                <div style={{fontSize:23,fontWeight:800,color:C.green,lineHeight:1,letterSpacing:"-0.025em",...NUM}}>{usd(totalSpend)}</div>
               </div>
               {spendByLocation.length>0&&(
-                <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {spendByLocation.map(([loc,amt])=>(
-                    <div key={loc} style={{display:"flex",justifyContent:"space-between",gap:12,fontSize:13,color:B.charcoal}}>
+                <div style={{display:"flex",flexDirection:"column"}}>
+                  {spendByLocation.map(([loc,amt],i)=>(
+                    <div key={loc} style={{display:"flex",justifyContent:"space-between",gap:SP.md,...TYPE.small,color:C.ink2,
+                      padding:"7px 0",borderTop:i===0?"none":`1px solid ${C.line}`}}>
                       <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{loc}</span>
-                      <span style={{fontWeight:700,flexShrink:0}}>{usd(amt)}</span>
+                      <span style={{fontWeight:700,flexShrink:0,color:C.ink,...NUM}}>{usd(amt)}</span>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           )}
 
           {/* Filters */}
@@ -1128,7 +1131,7 @@ function Dashboard() {
                     fontFamily:"inherit",cursor:"pointer"}}>
                   {f.opts.map(o=><option key={o} value={o}>{o==="All"?`All ${f.label==="Status"?"Statuses":f.label==="Priority"?"Priorities":f.label+"s"}`:o}</option>)}
                 </select>
-                <span style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",fontSize:12,color:B.gray}}>▾</span>
+                <span style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",display:"flex"}}><Icon name="chevronDown" size={13} color={C.ink4}/></span>
               </div>
             ))}
           </div>
@@ -1143,29 +1146,29 @@ function Dashboard() {
               const pri=getPri(o.priority);
               return (
                 <div key={i} onClick={()=>setExpanded(isExp?null:i)}
-                  style={{background:B.white,border:`1.5px solid ${isExp?B.charcoal:B.border}`,borderRadius:12,
-                    overflow:"hidden",cursor:"pointer",transition:"border-color 0.15s",
-                    boxShadow:isExp?"0 2px 12px rgba(0,0,0,0.08)":"none"}}>
+                  style={{background:C.surface,border:`1px solid ${isExp?C.lineStrong:C.line}`,borderRadius:R.md,
+                    overflow:"hidden",cursor:"pointer",transition:"border-color 0.15s, box-shadow 0.15s",
+                    boxShadow:isExp?EL.md:EL.sm}}>
                   {/* Card header */}
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 14px"}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
-                        <span style={{fontFamily:"monospace",fontWeight:700,fontSize:12,color:B.charcoal}}>{o.workOrderId||"—"}</span>
+                        <span style={{fontFamily:MONO,fontWeight:600,fontSize:11.5,color:C.ink3,letterSpacing:"0.02em"}}>{o.workOrderId||"—"}</span>
                         {pri&&<PriorityPill priority={o.priority}/>}
                         {(o.safetyHazard==="TRUE"||o.safetyHazard===true)&&(
-                          <span style={{fontSize:11,fontWeight:700,color:B.red,background:"#fff0f0",padding:"2px 7px",borderRadius:20,border:`1px solid ${B.red}55`}}>⚠️ Hazard</span>
+                          <Chip color={C.red} bg={C.redSoft} border="#FECACA"><Icon name="alert" size={11} color={C.red}/>Hazard</Chip>
                         )}
                       </div>
-                      <div style={{fontSize:13,fontWeight:600,color:B.charcoal,marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <div style={{...TYPE.bodyStrong,fontSize:14.5,color:C.ink,marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         {o.category||"Unknown category"}
                       </div>
-                      <div style={{fontSize:12,color:B.gray,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      <div style={{...TYPE.small,fontSize:12.5,color:C.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                         {o.location||o.locationSub||"—"} · {o.submittedAt||""}
                       </div>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
                       <StatusPill status={o.status||"Open"}/>
-                      <span style={{fontSize:16,color:B.gray}}>{isExp?"▲":"▼"}</span>
+                      <Icon name={isExp?"chevronUp":"chevronDown"} size={15} color={C.ink4}/>
                     </div>
                   </div>
 
@@ -1201,9 +1204,9 @@ function Dashboard() {
                         </div>
                       )}
                       {o.pdfUrl&&(
-                        <a href={o.pdfUrl} target="_blank" rel="noopener noreferrer"
-                          style={{display:"inline-block",marginTop:12,fontSize:13,fontWeight:600,color:B.red,textDecoration:"none"}}>
-                          📄 View PDF in Drive ↗
+                        <a href={o.pdfUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()}
+                          style={{display:"inline-flex",alignItems:"center",gap:6,marginTop:SP.md,...TYPE.smallStrong,color:B.red,textDecoration:"none"}}>
+                          <Icon name="doc" size={14} color={B.red}/> View PDF
                         </a>
                       )}
                     </div>
@@ -1238,8 +1241,9 @@ function Opt() {
 // ─── Logo ─────────────────────────────────────────────────────────────────────
 function Logo() {
   return (
-    <div style={{display:"flex",alignItems:"center",gap:10}}>
-      <div style={{width:36,height:36,borderRadius:8,background:B.red,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+    <div style={{display:"flex",alignItems:"center",gap:11}}>
+      <div style={{width:34,height:34,borderRadius:R.sm,background:B.red,display:"flex",alignItems:"center",
+        justifyContent:"center",flexShrink:0,boxShadow:"0 1px 3px rgba(204,0,0,0.4)"}}>
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
           <circle cx="11" cy="11" r="9" stroke="white" strokeWidth="1.5" fill="none"/>
           <ellipse cx="11" cy="11" rx="5" ry="9" stroke="white" strokeWidth="1.5" fill="none"/>
@@ -1249,11 +1253,11 @@ function Logo() {
         </svg>
       </div>
       <div>
-        <div style={{lineHeight:1,marginBottom:1}}>
-          <span style={{fontWeight:800,fontSize:15,color:B.red}}>first </span>
-          <span style={{fontWeight:800,fontSize:15,color:"#fff"}}>choice</span>
+        <div style={{lineHeight:1,marginBottom:3,letterSpacing:"-0.01em"}}>
+          <span style={{fontWeight:800,fontSize:15.5,color:"#FF4D4D"}}>first </span>
+          <span style={{fontWeight:800,fontSize:15.5,color:"#fff"}}>choice</span>
         </div>
-        <div style={{fontSize:9.5,color:"#9ca3af"}}>Facilities Hub</div>
+        <div style={{fontSize:9.5,fontWeight:600,color:"#8E8E96",letterSpacing:"0.07em",textTransform:"uppercase"}}>Facilities Hub</div>
       </div>
     </div>
   );
@@ -1395,11 +1399,12 @@ function RideBy() {
 }
 
 const TABS = [
-  { id:"dashboard", label:"Dashboard",     emoji:"📊" },
-  { id:"open",      label:"Open WO",       emoji:"🔧" },
-  { id:"close",     label:"Close WO",      emoji:"✅" },
-  { id:"rideby",    label:"Ride-By",       emoji:"🚗" },
-  { id:"howto",     label:"How-To",        emoji:"📖" },
+  { id:"dashboard", label:"Dashboard", icon:"gauge" },
+  { id:"reports",   label:"Reports",   icon:"chart" },
+  { id:"open",      label:"Open WO",   icon:"wrench" },
+  { id:"close",     label:"Close WO",  icon:"checkCircle" },
+  { id:"rideby",    label:"Ride-By",   icon:"car" },
+  { id:"howto",     label:"How-To",    icon:"book" },
 ];
 
 export default function FirstChoiceFacilitiesHub() {
@@ -1411,52 +1416,68 @@ export default function FirstChoiceFacilitiesHub() {
       <style>{`
         @keyframes fc-spin    { to { transform: rotate(360deg); } }
         @keyframes fc-shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        * { box-sizing: border-box; }
-        body { margin: 0; background: ${B.bg}; }
+        @keyframes fc-rise    { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; background: ${C.bg}; -webkit-font-smoothing: antialiased; }
+        input, select, textarea, button { font-family: inherit; }
         input:focus, select:focus, textarea:focus {
-          outline: 2px solid ${B.red} !important;
-          outline-offset: 1px;
-          border-color: ${B.red} !important;
+          outline: none !important;
+          border-color: ${C.red} !important;
+          box-shadow: 0 0 0 3px ${C.redRing};
         }
-        button:active { opacity: 0.85; transform: scale(0.98); }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+        button:active { transform: scale(0.985); }
+        button:focus-visible, a:focus-visible {
+          outline: 2px solid ${C.red}; outline-offset: 2px; border-radius: 6px;
+        }
+        .fc-pane { animation: fc-rise 0.22s ease both; }
+        .fc-tabs { scrollbar-width: none; }
+        .fc-tabs::-webkit-scrollbar { display: none; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: ${C.lineStrong}; border-radius: 3px; }
+        @media (min-width: 768px) { .fc-kpi { grid-template-columns: repeat(4, 1fr) !important; } }
       `}</style>
 
-      <div style={{minHeight:"100vh",background:B.bg,fontFamily:"'Segoe UI',system-ui,-apple-system,sans-serif",display:"flex",flexDirection:"column"}}>
+      <div style={{minHeight:"100vh",background:C.bg,fontFamily:FONT,color:C.ink,display:"flex",flexDirection:"column"}}>
 
         {/* ── Header ── */}
-        <header style={{background:B.charcoal,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,0.3)"}}>
-          <div style={{maxWidth:720,margin:"0 auto",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <header style={{background:C.header,position:"sticky",top:0,zIndex:100,
+          borderBottom:`1px solid rgba(255,255,255,0.07)`,boxShadow:"0 1px 12px rgba(0,0,0,0.18)"}}>
+          <div style={{maxWidth:840,margin:"0 auto",padding:`${SP.md}px ${SP.base}px`,display:"flex",
+            alignItems:"center",justifyContent:"space-between",gap:SP.md}}>
             <Logo/>
-            <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setShowHow(true)}
-                style={{background:"rgba(255,255,255,0.08)",border:"none",borderRadius:8,padding:"6px 10px",
-                  fontSize:13,fontWeight:600,color:"#fff",cursor:"pointer",letterSpacing:"0.02em"}}>
-                How-To
-              </button>
-            </div>
+            <button onClick={()=>setShowHow(true)}
+              style={{display:"flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.09)",
+                border:"1px solid rgba(255,255,255,0.10)",borderRadius:R.sm,padding:"7px 11px",
+                fontSize:12.5,fontWeight:600,color:"#fff",cursor:"pointer",letterSpacing:"0.01em"}}>
+              <Icon name="book" size={14} color="#fff"/> How-To
+            </button>
           </div>
 
           {/* Tab bar */}
-          <div style={{maxWidth:720,margin:"0 auto",display:"flex",borderTop:"1px solid rgba(255,255,255,0.08)"}}>
-            {TABS.map(t=>(
-              <button key={t.id} onClick={()=>setTab(t.id)}
-                style={{flex:1,padding:"10px 4px",border:"none",background:"none",cursor:"pointer",fontFamily:"inherit",
-                  borderBottom:tab===t.id?`3px solid ${B.red}`:"3px solid transparent",
-                  transition:"border-color 0.15s"}}>
-                <div style={{fontSize:16}}>{t.emoji}</div>
-                <div style={{fontSize:10,fontWeight:tab===t.id?700:500,color:tab===t.id?"#fff":"#9ca3af",marginTop:2,letterSpacing:"0.03em"}}>
-                  {t.label}
-                </div>
-              </button>
-            ))}
+          <div className="fc-tabs" style={{maxWidth:840,margin:"0 auto",display:"flex",overflowX:"auto",
+            borderTop:"1px solid rgba(255,255,255,0.07)"}}>
+            {TABS.map(t=>{
+              const on = tab===t.id;
+              return (
+                <button key={t.id} onClick={()=>setTab(t.id)} aria-current={on?"page":undefined}
+                  style={{flex:"1 0 auto",minWidth:62,padding:`${SP.sm}px 6px 7px`,border:"none",background:"none",
+                    cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4,
+                    borderBottom:on?`2.5px solid ${C.red}`:"2.5px solid transparent",transition:"border-color 0.15s"}}>
+                  <Icon name={t.icon} size={17} color={on?"#fff":"#8E8E96"} strokeWidth={on?2:1.7}/>
+                  <span style={{fontSize:10,fontWeight:on?700:500,color:on?"#fff":"#8E8E96",letterSpacing:"0.02em",whiteSpace:"nowrap"}}>
+                    {t.label}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </header>
 
         {/* ── Main ── */}
-        <main style={{flex:1,maxWidth:720,width:"100%",margin:"0 auto",padding:"20px 16px 56px",display:"flex",flexDirection:"column"}}>
+        <main key={tab} className="fc-pane" style={{flex:1,maxWidth:840,width:"100%",margin:"0 auto",
+          padding:`${SP.xl}px ${SP.base}px ${SP.xxxl+16}px`,display:"flex",flexDirection:"column"}}>
           {tab==="dashboard" && <Dashboard/>}
+          {tab==="reports"   && <Reports/>}
           {tab==="open"      && <OpenWO/>}
           {tab==="close"     && <CloseWO/>}
           {tab==="rideby"    && <RideBy/>}
@@ -1474,32 +1495,84 @@ function HowToPage({ onClose }) {
   return <div style={{paddingBottom:20}}><HowTo onClose={onClose}/></div>;
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ──────────────────────────────────────────────────────────────────
+// Every value below resolves to a design-system token. Nothing is a magic
+// number: spacing sits on the 8pt grid, type comes from TYPE, color from C.
 const s = {
-  formHead:  { marginBottom:22 },
-  formTag:   { display:"inline-block",background:B.red,color:"#fff",fontSize:10,fontWeight:700,letterSpacing:"0.12em",padding:"3px 10px",borderRadius:4,marginBottom:10 },
-  formTitle: { fontSize:26,fontWeight:800,color:B.charcoal,margin:"0 0 6px",letterSpacing:"-0.02em" },
-  formSub:   { fontSize:14,color:B.gray,margin:0 },
-  field:     { display:"flex",flexDirection:"column",gap:7,marginBottom:20 },
-  label:     { fontSize:13.5,fontWeight:600,color:B.charcoal },
-  input:     { width:"100%",padding:"13px 14px",fontSize:15,fontFamily:"inherit",border:`1.5px solid ${B.border}`,borderRadius:10,background:"#fff",color:B.charcoal,transition:"border-color 0.15s" },
-  textarea:  { width:"100%",padding:"13px 14px",fontSize:15,fontFamily:"inherit",border:`1.5px solid ${B.border}`,borderRadius:10,background:"#fff",color:B.charcoal,resize:"vertical",lineHeight:1.55,transition:"border-color 0.15s" },
-  chevron:   { position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:"#9ca3af",fontSize:16 },
-  priorityGrid: { display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 },
-  priorityBtn:  { display:"flex",alignItems:"flex-start",gap:10,padding:"13px 12px",border:"2px solid",borderRadius:10,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"all 0.15s" },
-  toggleBtn: { display:"flex",alignItems:"center",gap:12,width:"100%",padding:"14px",border:"2px solid",borderRadius:10,cursor:"pointer",fontFamily:"inherit",textAlign:"left",transition:"all 0.15s" },
-  photoBtn:  { display:"flex",flexDirection:"column",alignItems:"center",gap:7,width:"100%",padding:"24px 16px",border:`2px dashed ${B.border}`,borderRadius:10,background:"#fafafa",cursor:"pointer",fontFamily:"inherit",fontSize:14,color:B.gray },
-  thumbWrap: { position:"relative",borderRadius:8,overflow:"hidden",border:`1.5px solid ${B.border}`,aspectRatio:"1",background:"#f0f0f0" },
+  // Page headers
+  formHead:  { marginBottom:SP.xl },
+  formTag:   { display:"inline-flex",alignItems:"center",background:C.red,color:"#fff",...TYPE.eyebrow,
+               fontSize:10,padding:"4px 9px",borderRadius:R.sm-2,marginBottom:SP.md },
+  formTitle: { ...TYPE.display,color:C.ink,margin:`0 0 ${SP.sm}px` },
+  formSub:   { ...TYPE.small,fontSize:13.5,color:C.ink3,margin:0 },
+
+  // Fields
+  field:     { display:"flex",flexDirection:"column",gap:7,marginBottom:SP.lg },
+  label:     { ...TYPE.smallStrong,fontSize:13,color:C.ink2 },
+  input:     { width:"100%",padding:"12px 14px",fontSize:15,fontFamily:"inherit",color:C.ink,
+               border:`1px solid ${C.lineStrong}`,borderRadius:R.sm+2,background:C.surface,
+               boxShadow:EL.sm,transition:"border-color 0.15s, box-shadow 0.15s" },
+  textarea:  { width:"100%",padding:"12px 14px",fontSize:15,fontFamily:"inherit",color:C.ink,
+               border:`1px solid ${C.lineStrong}`,borderRadius:R.sm+2,background:C.surface,
+               boxShadow:EL.sm,resize:"vertical",lineHeight:1.55,transition:"border-color 0.15s, box-shadow 0.15s" },
+  chevron:   { position:"absolute",right:13,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",display:"flex" },
+
+  // Choice controls
+  priorityGrid: { display:"grid",gridTemplateColumns:"1fr 1fr",gap:SP.sm+2 },
+  priorityBtn:  { display:"flex",alignItems:"flex-start",gap:SP.sm+2,padding:`${SP.md}px ${SP.md}px`,
+                  border:"1.5px solid",borderRadius:R.sm+2,cursor:"pointer",textAlign:"left",
+                  fontFamily:"inherit",transition:"all 0.15s" },
+  toggleBtn: { display:"flex",alignItems:"center",gap:SP.md,width:"100%",padding:SP.md+1,
+               border:"1.5px solid",borderRadius:R.sm+2,cursor:"pointer",fontFamily:"inherit",
+               textAlign:"left",transition:"all 0.15s" },
+
+  // Photos
+  photoBtn:  { display:"flex",flexDirection:"column",alignItems:"center",gap:7,width:"100%",
+               padding:`${SP.xl}px ${SP.base}px`,border:`1.5px dashed ${C.lineStrong}`,borderRadius:R.md,
+               background:C.surfaceAlt,cursor:"pointer",fontFamily:"inherit",fontSize:14,color:C.ink3,
+               transition:"border-color 0.15s, background 0.15s" },
+  photoIcon: { width:38,height:38,borderRadius:R.sm+2,background:C.surface,border:`1px solid ${C.line}`,
+               display:"flex",alignItems:"center",justifyContent:"center",boxShadow:EL.sm },
+  thumbWrap: { position:"relative",borderRadius:R.sm+2,overflow:"hidden",border:`1px solid ${C.line}`,
+               aspectRatio:"1",background:C.surfaceAlt },
   thumbImg:  { width:"100%",height:"100%",objectFit:"cover",display:"block" },
-  thumbX:    { position:"absolute",top:5,right:5,width:24,height:24,borderRadius:12,background:"rgba(0,0,0,0.65)",color:"#fff",border:"none",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700 },
-  thumbN:    { position:"absolute",bottom:5,left:7,fontSize:11,fontWeight:700,color:"#fff",textShadow:"0 1px 3px rgba(0,0,0,0.6)" },
-  spin:      { display:"inline-block",width:15,height:15,border:"2.5px solid #bfdbfe",borderTopColor:"#1d4ed8",borderRadius:"50%",animation:"fc-spin 0.75s linear infinite",flexShrink:0 },
-  submitBtn: { width:"100%",padding:"17px 20px",background:B.red,color:"#fff",border:"none",borderRadius:12,fontSize:17,fontWeight:700,fontFamily:"inherit",letterSpacing:"0.02em",boxShadow:"0 4px 18px rgba(204,0,0,0.32)",transition:"opacity 0.15s",marginTop:4 },
-  footNote:  { textAlign:"center",color:"#c0c0c0",fontSize:11,margin:"24px 0 0" },
-  btnRed:    { width:"100%",padding:"14px 20px",background:B.red,color:"#fff",border:"none",borderRadius:10,fontSize:15,fontWeight:700,fontFamily:"inherit",cursor:"pointer" },
-  btnOutline:{ width:"100%",padding:"14px 20px",background:"#fff",color:B.charcoal,border:`1.5px solid ${B.border}`,borderRadius:10,fontSize:15,fontWeight:600,fontFamily:"inherit",cursor:"pointer" },
-  overlay:   { position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200,display:"flex",alignItems:"flex-end",overflowY:"auto" },
-  sheet:     { background:"#fff",width:"100%",maxWidth:720,margin:"0 auto",borderRadius:"18px 18px 0 0",padding:"12px 20px 40px",boxShadow:"0 -8px 40px rgba(0,0,0,0.15)" },
-  sheetHandle:{ width:40,height:4,borderRadius:2,background:"#e0e0e0",margin:"0 auto 18px" },
-  closeBtn:  { width:32,height:32,borderRadius:16,border:"none",background:"#f0f0f0",color:"#555",fontSize:14,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center" },
+  thumbX:    { position:"absolute",top:5,right:5,width:23,height:23,borderRadius:12,
+               background:"rgba(12,12,14,0.68)",backdropFilter:"blur(3px)",color:"#fff",border:"none",
+               cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0 },
+  thumbN:    { position:"absolute",bottom:5,left:7,fontSize:10.5,fontWeight:700,color:"#fff",
+               textShadow:"0 1px 3px rgba(0,0,0,0.65)" },
+
+  // Feedback
+  spin:      { display:"inline-block",width:14,height:14,border:"2.5px solid #BFDBFE",
+               borderTopColor:"#1D4ED8",borderRadius:"50%",animation:"fc-spin 0.75s linear infinite",flexShrink:0 },
+
+  // Buttons
+  submitBtn: { width:"100%",padding:"16px 20px",background:C.red,color:"#fff",border:"none",
+               borderRadius:R.md,fontSize:16,fontWeight:700,fontFamily:"inherit",letterSpacing:"0.01em",
+               boxShadow:"0 2px 10px rgba(204,0,0,0.26)",transition:"opacity 0.15s, box-shadow 0.15s",marginTop:SP.xs },
+  btnRed:    { width:"100%",padding:"13px 20px",background:C.red,color:"#fff",border:"none",
+               borderRadius:R.sm+2,fontSize:15,fontWeight:700,fontFamily:"inherit",cursor:"pointer",
+               boxShadow:"0 2px 8px rgba(204,0,0,0.22)" },
+  btnOutline:{ width:"100%",padding:"13px 20px",background:C.surface,color:C.ink2,
+               border:`1px solid ${C.lineStrong}`,borderRadius:R.sm+2,fontSize:15,fontWeight:600,
+               fontFamily:"inherit",cursor:"pointer",boxShadow:EL.sm },
+  iconBtn:   { display:"flex",alignItems:"center",justifyContent:"center",width:36,height:36,
+               background:C.surface,border:`1px solid ${C.line}`,borderRadius:R.sm,cursor:"pointer",
+               boxShadow:EL.sm,padding:0 },
+
+  // Layout helpers
+  kpiGrid:   { display:"grid",gridTemplateColumns:"1fr 1fr",gap:SP.sm+2,marginBottom:SP.base },
+  secIcon:   { width:28,height:28,borderRadius:R.sm-1,background:C.surfaceAlt,border:`1px solid ${C.line}`,
+               display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 },
+  footNote:  { textAlign:"center",color:C.ink4,fontSize:11,fontWeight:500,margin:`${SP.xl}px 0 0`,letterSpacing:"0.02em" },
+
+  // Sheets / modals
+  overlay:   { position:"fixed",inset:0,background:"rgba(12,12,14,0.52)",backdropFilter:"blur(2px)",
+               zIndex:200,display:"flex",alignItems:"flex-end",overflowY:"auto" },
+  sheet:     { background:C.surface,width:"100%",maxWidth:840,margin:"0 auto",
+               borderRadius:`${R.lg+2}px ${R.lg+2}px 0 0`,padding:`${SP.md}px ${SP.lg}px ${SP.xxxl}px`,
+               boxShadow:"0 -8px 40px rgba(12,12,14,0.18)" },
+  sheetHandle:{ width:38,height:4,borderRadius:2,background:C.line,margin:`0 auto ${SP.lg}px` },
+  closeBtn:  { width:32,height:32,borderRadius:16,border:`1px solid ${C.line}`,background:C.surfaceAlt,
+               cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",padding:0 },
 };
