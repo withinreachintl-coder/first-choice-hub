@@ -144,23 +144,31 @@ async function handle(req: Request) {
   const dryRun = url.searchParams.get("dryRun") === "1";
   const offset = Number(url.searchParams.get("offset") ?? "-1");
 
+  // ?who=1 sends nothing — it only reports who WOULD receive a report, so it
+  // sits above the auth gate. Without this it is impossible to check the
+  // recipient list from a browser (a typed URL carries no Origin header).
+  if (whoOnly) {
+    const to = reportRecipients();
+    return NextResponse.json({
+      recipients: to,
+      count: to.length,
+      source: process.env.FC_REPORT_EMAILS
+        ? "FC_REPORT_EMAILS"
+        : process.env.FC_NOTIFY_EMAILS
+          ? "FC_NOTIFY_EMAILS"
+          : "none configured",
+      cronSecretSet: !!process.env.CRON_SECRET,
+      resendKeySet: !!process.env.RESEND_API_KEY,
+      dueToday: dueOn(new Date()),
+    });
+  }
+
   const authErr = authorized(req, { dryRun, auto });
   if (authErr) {
     return NextResponse.json({ error: authErr }, { status: authErr === "Unauthorized" ? 401 : 500 });
   }
   if (!Number.isFinite(offset) || offset > 0 || offset < -24) {
     return NextResponse.json({ error: "offset must be between -24 and 0" }, { status: 400 });
-  }
-
-  // ?who=1 answers "who would actually receive this?" without sending.
-  if (whoOnly) {
-    const to = reportRecipients();
-    return NextResponse.json({
-      recipients: to,
-      count: to.length,
-      source: process.env.FC_REPORT_EMAILS ? "FC_REPORT_EMAILS" : process.env.FC_NOTIFY_EMAILS ? "FC_NOTIFY_EMAILS" : "none configured",
-      dueToday: dueOn(new Date()),
-    });
   }
 
   try {
