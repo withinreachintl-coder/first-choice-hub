@@ -49,18 +49,52 @@ export function dueOn(date: Date, tz: string = TZ): Period[] {
   return due;
 }
 
-function authorized(req: Request, dryRun: boolean): string | null {
+/**
+ * Two ways in:
+ *
+ *   1. The scheduler — Vercel Cron sends `Authorization: Bearer $CRON_SECRET`.
+ *      A valid secret is always accepted and is REQUIRED for `auto=1`, since
+ *      that path is only ever meant to be triggered by the schedule.
+ *
+ *   2. The app itself — the "Email this report" button posts from the Reports
+ *      tab with no secret. Requiring one there would make the button
+ *      permanently return 401, so instead we accept same-origin requests: the
+ *      Origin (or Referer) host must match the host serving the request. That
+ *      blocks another site from POSTing here, while letting the app work.
+ *
+ * The blast radius of a manual send is small by design: the route cannot be
+ * told who to email. Recipients come from FC_REPORT_EMAILS on the server, so
+ * the worst case is a duplicate report to the people already on the list.
+ */
+function sameOrigin(req: Request): boolean {
+  const host = req.headers.get("host");
+  if (!host) return false;
+  const src = req.headers.get("origin") ?? req.headers.get("referer") ?? "";
+  if (!src) return false;
+  try {
+    return new URL(src).host === host;
+  } catch {
+    return false;
+  }
+}
+
+function authorized(req: Request, opts: { dryRun: boolean; auto: boolean }): string | null {
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") ?? "";
-    const alt = req.headers.get("x-cron-secret") ?? "";
-    if (auth !== `Bearer ${secret}` && alt !== secret) return "Unauthorized";
-    return null;
+  const auth = req.headers.get("authorization") ?? "";
+  const alt = req.headers.get("x-cron-secret") ?? "";
+  const hasSecret = !!secret && (auth === `Bearer ${secret}` || alt === secret);
+
+  if (hasSecret) return null;
+
+  // The scheduled path is secret-only.
+  if (opts.auto) {
+    return secret ? "Unauthorized" : "CRON_SECRET is not configured; refusing to send.";
   }
-  if (process.env.NODE_ENV === "production" && !dryRun) {
-    return "CRON_SECRET is not configured; refusing to send.";
-  }
-  return null;
+
+  // Manual send or preview from the app.
+  if (opts.dryRun || sameOrigin(req)) return null;
+
+  return "Unauthorized";
 }
 
 async function sendOne(period: Period, offset: number) {
@@ -110,23 +144,31 @@ async function handle(req: Request) {
   const dryRun = url.searchParams.get("dryRun") === "1";
   const offset = Number(url.searchParams.get("offset") ?? "-1");
 
-  const authErr = authorized(req, dryRun);
-  if (authErr) {
-    return NextResponse.json({ error: authErr }, { status: authErr === "Unauthorized" ? 401 : 500 });
-  }
-  if (!Number.isFinite(offset) || offset > 0 || offset < -24) {
-    return NextResponse.json({ error: "offset must be between -24 and 0" }, { status: 400 });
-  }
-
-  // ?who=1 answers "who would actually receive this?" without sending.
+  // ?who=1 sends nothing — it only reports who WOULD receive a report, so it
+  // sits above the auth gate. Without this it is impossible to check the
+  // recipient list from a browser (a typed URL carries no Origin header).
   if (whoOnly) {
     const to = reportRecipients();
     return NextResponse.json({
       recipients: to,
       count: to.length,
-      source: process.env.FC_REPORT_EMAILS ? "FC_REPORT_EMAILS" : process.env.FC_NOTIFY_EMAILS ? "FC_NOTIFY_EMAILS" : "none configured",
+      source: process.env.FC_REPORT_EMAILS
+        ? "FC_REPORT_EMAILS"
+        : process.env.FC_NOTIFY_EMAILS
+          ? "FC_NOTIFY_EMAILS"
+          : "none configured",
+      cronSecretSet: !!process.env.CRON_SECRET,
+      resendKeySet: !!process.env.RESEND_API_KEY,
       dueToday: dueOn(new Date()),
     });
+  }
+
+  const authErr = authorized(req, { dryRun, auto });
+  if (authErr) {
+    return NextResponse.json({ error: authErr }, { status: authErr === "Unauthorized" ? 401 : 500 });
+  }
+  if (!Number.isFinite(offset) || offset > 0 || offset < -24) {
+    return NextResponse.json({ error: "offset must be between -24 and 0" }, { status: 400 });
   }
 
   try {
