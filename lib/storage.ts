@@ -16,9 +16,13 @@ function supabaseClient(): SupabaseClient {
 const BUCKET = "fc-work-orders";
 const SIGNED_TTL = 60 * 60 * 24 * 7; // 7 days
 
+// Strip any data URI prefix. jsPDF emits "data:application/pdf;filename=generated.pdf;base64,..."
+// which a "data:<type>;base64," pattern misses, so the whole string was decoded as garbage.
 function decodeBase64(b64: string): Buffer {
-  return Buffer.from(b64.replace(/^data:[^;]+;base64,/, ""), "base64");
+  return Buffer.from(b64.replace(/^data:[^,]*,/, ""), "base64");
 }
+
+const MIN_PDF_BYTES = 1024;
 
 /** Upload a base64 string, return the storage path (key). */
 export async function uploadBase64(
@@ -26,9 +30,17 @@ export async function uploadBase64(
   b64: string,
   contentType: string
 ): Promise<string> {
+  const buf = decodeBase64(b64);
+  if (contentType === "application/pdf") {
+    if (buf.length < MIN_PDF_BYTES || buf.subarray(0, 4).toString("latin1") !== "%PDF") {
+      throw new Error(
+        `refusing to upload invalid PDF to ${path}: ${buf.length} bytes, header ${JSON.stringify(buf.subarray(0, 4).toString("latin1"))}`
+      );
+    }
+  }
   const { error } = await supabaseClient().storage
     .from(BUCKET)
-    .upload(path, decodeBase64(b64), { contentType, upsert: true });
+    .upload(path, buf, { contentType, upsert: true });
   if (error) throw new Error(`storage upload failed: ${error.message}`);
   return path;
 }
