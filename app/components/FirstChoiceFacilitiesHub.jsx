@@ -458,7 +458,8 @@ function HowTo({ onClose }) {
     'Tap "Add" to confirm. The app icon will appear on your home screen.',
   ];
 
-  const DeviceSteps = ({ id, label, icon, steps }) => {
+  // Render helper, not a component: defining a component inside render remounts it every render.
+  const renderDeviceSteps = ({ id, label, icon, steps }) => {
     const open = openDevice === id;
     return (
       <div style={{borderRadius:10,border:`1.5px solid ${open?B.charcoal:B.border}`,overflow:"hidden",marginBottom:8}}>
@@ -522,8 +523,8 @@ function HowTo({ onClose }) {
           <p style={{fontSize:14,color:"#444",lineHeight:1.6,margin:"0 0 12px"}}>
             Add this app to your home screen for one-tap access — no app store required.
           </p>
-          <DeviceSteps id="iphone"  label="Add to Home Screen — iPhone (Safari)" icon="🍎" steps={IOS_STEPS}/>
-          <DeviceSteps id="android" label="Add to Home Screen — Android (Chrome)" icon="🤖" steps={ANDROID_STEPS}/>
+          {renderDeviceSteps({ id:"iphone",  label:"Add to Home Screen — iPhone (Safari)", icon:"🍎", steps:IOS_STEPS })}
+          {renderDeviceSteps({ id:"android", label:"Add to Home Screen — Android (Chrome)", icon:"🤖", steps:ANDROID_STEPS })}
         </div>
 
         {sections.map((sec,i)=>(
