@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
 import Reports from "./Reports";
+import WoReports from "./WoReports";
 import {
   C, SP, R, EL, TYPE, NUM, FONT, MONO,
   Icon, Card, Eyebrow, Kpi, Chip, Dot, StackBar, EmptyState,
@@ -53,8 +54,10 @@ const EMPTY_OPEN = {
 };
 const EMPTY_CLOSE = {
   workOrderId:"", techName:"", completionNotes:"", partsUsed:"", costAmount:"",
-  completionPhotos:[], status:"Resolved",
+  completionPhotos:[], status:"Resolved", timeIn:"", timeOut:"",
 };
+// Time In / Time Out are required to close or resolve (not to cancel).
+const TIME_REQUIRED = ["Resolved","Closed"];
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
 const getPri   = (v) => PRIORITIES.find((p) => p.value === v) || null;
@@ -62,6 +65,23 @@ const formatTs = () => new Date().toLocaleString("en-US",{month:"short",day:"num
 const genId    = () => {
   const d = new Date();
   return `FCF-${String(d.getFullYear()).slice(-2)}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}-${Math.floor(Math.random()*9000)+1000}`;
+};
+// Current America/Chicago wall-clock time as a datetime-local value ("YYYY-MM-DDTHH:MM").
+const chicagoNowLocal = () => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})
+    .formatToParts(new Date()).map(x=>[x.type,x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+};
+const newCloseForm = () => { const now=chicagoNowLocal(); return {...EMPTY_CLOSE, timeIn:now, timeOut:now}; };
+// Format a datetime-local value for display without shifting time zones.
+const fmtLocalDT = (v) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(v||"");
+  if (!m) return "";
+  return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5])).toLocaleString("en-US",{timeZone:"UTC",month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit",hour12:true});
+};
+const localHours = (a, b) => {
+  const ms = new Date(`${b}:00Z`).getTime() - new Date(`${a}:00Z`).getTime();
+  return isNaN(ms) ? "" : (ms/3600000).toFixed(2);
 };
 const readFile = (f) => new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.readAsDataURL(f); });
 
@@ -140,6 +160,9 @@ async function buildPDF(form, id, ts, download = true) {
     ["Closed At",        ts],
     ["Technician",       form.techName],
     ["Closure Status",   form.status],
+    ...(form.timeIn ? [["Time In", fmtLocalDT(form.timeIn)]] : []),
+    ...(form.timeOut ? [["Time Out", fmtLocalDT(form.timeOut)]] : []),
+    ...(form.timeIn && form.timeOut ? [["Hours", localHours(form.timeIn, form.timeOut)]] : []),
     ...(form.partsUsed ? [["Parts / Materials", form.partsUsed]] : []),
   ] : [
     ["Work Order ID",    id],
@@ -435,7 +458,8 @@ function HowTo({ onClose }) {
     'Tap "Add" to confirm. The app icon will appear on your home screen.',
   ];
 
-  const DeviceSteps = ({ id, label, icon, steps }) => {
+  // Render helper, not a component: defining a component inside render remounts it every render.
+  const renderDeviceSteps = ({ id, label, icon, steps }) => {
     const open = openDevice === id;
     return (
       <div style={{borderRadius:10,border:`1.5px solid ${open?B.charcoal:B.border}`,overflow:"hidden",marginBottom:8}}>
@@ -499,8 +523,8 @@ function HowTo({ onClose }) {
           <p style={{fontSize:14,color:"#444",lineHeight:1.6,margin:"0 0 12px"}}>
             Add this app to your home screen for one-tap access — no app store required.
           </p>
-          <DeviceSteps id="iphone"  label="Add to Home Screen — iPhone (Safari)" icon="🍎" steps={IOS_STEPS}/>
-          <DeviceSteps id="android" label="Add to Home Screen — Android (Chrome)" icon="🤖" steps={ANDROID_STEPS}/>
+          {renderDeviceSteps({ id:"iphone",  label:"Add to Home Screen — iPhone (Safari)", icon:"🍎", steps:IOS_STEPS })}
+          {renderDeviceSteps({ id:"android", label:"Add to Home Screen — Android (Chrome)", icon:"🤖", steps:ANDROID_STEPS })}
         </div>
 
         {sections.map((sec,i)=>(
@@ -716,8 +740,9 @@ function OpenWO() {
 // TAB 3 — Close Work Order
 // ═══════════════════════════════════════════════════════════════════════════════
 function CloseWO() {
-  const [form, setForm]=useState(EMPTY_CLOSE);
+  const [form, setForm]=useState(newCloseForm);
   const [status, setStatus]=useState(null);
+  const [timeError, setTimeError]=useState(null);
   const [submitted, setSubmitted]=useState(false);
   const [savedForm, setSavedForm]=useState(null);
   const [savedTs, setSavedTs]=useState("");
@@ -771,8 +796,18 @@ function CloseWO() {
     return null;
   };
 
+  const validateTimes=()=>{
+    if (TIME_REQUIRED.includes(form.status)&&(!form.timeIn||!form.timeOut))
+      return "Time In and Time Out are required to close or resolve a work order.";
+    if (form.timeIn&&form.timeOut&&form.timeOut<=form.timeIn)
+      return "Time Out must be after Time In.";
+    return null;
+  };
+
   const handleSubmit=async()=>{
-    const err=validate();
+    const tErr=validateTimes();
+    setTimeError(tErr);
+    const err=validate()||tErr;
     if (err) { setStatus({type:"error",message:err}); return; }
 
     const ts=formatTs();
@@ -787,6 +822,7 @@ function CloseWO() {
       completionNotes:form.completionNotes, partsUsed:form.partsUsed||null,
       costAmount:form.costAmount!==""&&!isNaN(Number(form.costAmount))?Number(form.costAmount):null,
       status:form.status,
+      timeIn:form.timeIn||null, timeOut:form.timeOut||null,
       completionPhotos:form.completionPhotos.map(p=>({photo:p.b64,photoName:p.name})),
       completionPhotoCount:form.completionPhotos.length,
       pdfBase64,
@@ -794,6 +830,11 @@ function CloseWO() {
 
     try {
       const res=await fetch(`/api/work-orders/${encodeURIComponent(payload.workOrderId)}/close`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      if (res.status===400) {
+        const msg=(await res.json().catch(()=>({})))?.error||"HTTP 400";
+        if (/time/i.test(msg)) setTimeError(msg);
+        throw new Error(msg);
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSavedForm({...form,_type:"close"}); setSavedTs(ts);
       setSubmitted(true); setStatus(null);
@@ -811,7 +852,7 @@ function CloseWO() {
           ...(savedForm.partsUsed?[["Parts Used",savedForm.partsUsed]]:[]),
           ...(savedForm.costAmount!==""&&savedForm.costAmount!=null?[["Amount Spent",`$${Number(savedForm.costAmount).toFixed(2)}`]]:[]),
         ]}
-        onReset={()=>{setForm(EMPTY_CLOSE);setSubmitted(false);setStatus(null);}}
+        onReset={()=>{setForm(newCloseForm());setTimeError(null);setSubmitted(false);setStatus(null);}}
         onPDF={handlePDF}
         resetLabel="Close Another"
       />
@@ -931,6 +972,23 @@ function CloseWO() {
       <div style={s.field}><Label required>Completion Notes</Label>
         <FTextarea value={form.completionNotes} onChange={set("completionNotes")}
           placeholder="What was done? What was the root cause? Any follow-up needed?"/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:SP.md,marginBottom:SP.lg}}>
+        <div style={{...s.field,marginBottom:0}}><Label required={TIME_REQUIRED.includes(form.status)}>Time In</Label>
+          <input type="datetime-local" value={form.timeIn} aria-invalid={!!timeError}
+            onChange={e=>{set("timeIn")(e.target.value);setTimeError(null);}}
+            style={{...s.input,borderColor:timeError?C.red:undefined}}/>
+        </div>
+        <div style={{...s.field,marginBottom:0}}><Label required={TIME_REQUIRED.includes(form.status)}>Time Out</Label>
+          <input type="datetime-local" value={form.timeOut} aria-invalid={!!timeError}
+            onChange={e=>{set("timeOut")(e.target.value);setTimeError(null);}}
+            style={{...s.input,borderColor:timeError?C.red:undefined}}/>
+        </div>
+        {timeError&&(
+          <p role="alert" style={{gridColumn:"1 / -1",margin:0,display:"flex",alignItems:"center",gap:6,fontSize:13,fontWeight:600,color:"#8C0000"}}>
+            <Icon name="alert" size={14} color={C.red}/>{timeError}
+          </p>
+        )}
       </div>
       <div style={s.field}><Label>Parts / Materials Used <Opt/></Label>
         <FInput value={form.partsUsed} onChange={set("partsUsed")} placeholder="e.g. 3/4″ PVC coupling, belt drive, filter #16A…"/>
@@ -1190,6 +1248,9 @@ function Dashboard() {
                           ["Technician",    o.techName],
                           ["Parts Used",    o.partsUsed],
                           ["Completed",     o.closedAt],
+                          ["Time In",       o.timeIn],
+                          ["Time Out",      o.timeOut],
+                          ["Hours",         o.hours],
                         ].filter(([,v])=>v).map(([k,v])=>(
                           <div key={k}>
                             <div style={{fontSize:11,fontWeight:600,color:B.gray}}>{k}</div>
@@ -1401,14 +1462,15 @@ function RideBy() {
 const TABS = [
   { id:"dashboard", label:"Dashboard", icon:"gauge" },
   { id:"reports",   label:"Reports",   icon:"chart" },
-  { id:"open",      label:"Open WO",   icon:"wrench" },
+  { id:"woreports", label:"WO Reports", icon:"doc" },
+  { id:"open",     label:"Open WO",   icon:"wrench" },
   { id:"close",     label:"Close WO",  icon:"checkCircle" },
   { id:"rideby",    label:"Ride-By",   icon:"car" },
   { id:"howto",     label:"How-To",    icon:"book" },
 ];
 
-export default function FirstChoiceFacilitiesHub() {
-  const [tab,      setTab]     = useState("dashboard");
+export default function FirstChoiceFacilitiesHub({ initialTab = "dashboard" }) {
+  const [tab,      setTab]     = useState(initialTab);
   const [showHow,  setShowHow] = useState(false);
 
   return (
@@ -1478,6 +1540,7 @@ export default function FirstChoiceFacilitiesHub() {
           padding:`${SP.xl}px ${SP.base}px ${SP.xxxl+16}px`,display:"flex",flexDirection:"column"}}>
           {tab==="dashboard" && <Dashboard/>}
           {tab==="reports"   && <Reports/>}
+          {tab==="woreports" && <WoReports/>}
           {tab==="open"      && <OpenWO/>}
           {tab==="close"     && <CloseWO/>}
           {tab==="rideby"    && <RideBy/>}
