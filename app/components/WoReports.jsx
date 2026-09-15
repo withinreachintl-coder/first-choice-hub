@@ -395,9 +395,10 @@ function buildWoReportPDF(jsPDF, rep) {
     doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(23, 23, 24);
     const title = `${g.group}${g.sub ? ` / ${g.sub}` : ""}`;
     doc.text(title, M + 2, y + 4.8);
+    const titleW = doc.getTextWidth(title); // measure in bold, before switching fonts
     doc.setFont("helvetica", "normal"); doc.setTextColor(107, 114, 128);
-    doc.text(`${t.count} WO${t.count === 1 ? "" : "s"}${rep.type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}`,
-      M + 4 + doc.getTextWidth(title), y + 4.8);
+    doc.text(`· ${t.count} WO${t.count === 1 ? "" : "s"}${rep.type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}`,
+      M + 4 + titleW, y + 4.8);
     y += 7;
 
     doc.setFontSize(7.5);
