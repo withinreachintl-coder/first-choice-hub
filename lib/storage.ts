@@ -24,6 +24,15 @@ function decodeBase64(b64: string): Buffer {
 
 const MIN_PDF_BYTES = 1024;
 
+/** Throw unless `buf` looks like a real PDF. Also used by scripts/backfill-pdfs. */
+export function assertValidPdf(buf: Buffer, path: string): void {
+  if (buf.length < MIN_PDF_BYTES || buf.subarray(0, 4).toString("latin1") !== "%PDF") {
+    throw new Error(
+      `refusing to upload invalid PDF to ${path}: ${buf.length} bytes, header ${JSON.stringify(buf.subarray(0, 4).toString("latin1"))}`
+    );
+  }
+}
+
 /** Upload a base64 string, return the storage path (key). */
 export async function uploadBase64(
   path: string,
@@ -31,13 +40,7 @@ export async function uploadBase64(
   contentType: string
 ): Promise<string> {
   const buf = decodeBase64(b64);
-  if (contentType === "application/pdf") {
-    if (buf.length < MIN_PDF_BYTES || buf.subarray(0, 4).toString("latin1") !== "%PDF") {
-      throw new Error(
-        `refusing to upload invalid PDF to ${path}: ${buf.length} bytes, header ${JSON.stringify(buf.subarray(0, 4).toString("latin1"))}`
-      );
-    }
-  }
+  if (contentType === "application/pdf") assertValidPdf(buf, path);
   const { error } = await supabaseClient().storage
     .from(BUCKET)
     .upload(path, buf, { contentType, upsert: true });
