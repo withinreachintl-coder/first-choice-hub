@@ -83,6 +83,19 @@ async function download(storage, key) {
   return Buffer.from(await data.arrayBuffer());
 }
 
+/**
+ * Fetch through a fresh signed URL, which is how the app serves View PDF.
+ * The plain download path can return a CDN copy cached under the old
+ * max-age=3600, so verification has to bypass it.
+ */
+async function downloadFresh(storage, key) {
+  const { data, error } = await storage.from(BUCKET).createSignedUrl(key, 60);
+  if (error) throw new Error(`sign ${key}: ${error.message}`);
+  const res = await fetch(`${data.signedUrl}&cb=${Date.now()}`, { cache: "no-store", headers: { "cache-control": "no-cache" } });
+  if (!res.ok) throw new Error(`fetch ${key}: HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /** Photos are stored as separate objects; feed them back as data URLs. */
 async function loadPhotos(storage, keys) {
   const out = [];
@@ -137,6 +150,7 @@ try {
       select o.name, (o.metadata->>'size')::int as size, o.created_at
         from storage.objects o
        where o.bucket_id = $1 and o.name like '%.pdf'
+         and o.name not like '${BACKUP_PREFIX}/%'
          and split_part(o.name, '/', 1) not in (select work_order_id from first_choice.work_orders)
        order by o.name`, [BUCKET]);
     console.log(`orphan PDFs (no work_orders row): ${rows.length}`);
@@ -165,6 +179,7 @@ try {
   const built = [];
   const skipped = [];
   const failures = [];
+  const uploadSkips = [];
 
   for (const r of rows) {
     const label = `${r.work_order_id} ${r.kind}`;
@@ -205,36 +220,56 @@ try {
   if (MODE === "upload") {
     if (failures.length) throw new Error(`refusing to upload: ${failures.length} build failure(s)`);
     let backed = 0, uploaded = 0;
-    for (const b of built) {
+    // One retry per file, then skip it and keep going. Skips are listed at the end.
+    const putOnce = async (b) => {
       const original = await download(storage, b.key);
       const backupKey = `${BACKUP_PREFIX}/${b.key}`;
       const up = await storage.from(BUCKET).upload(backupKey, original, {
         contentType: "application/pdf", upsert: false,
       });
-      if (up.error && !/exists/i.test(up.error.message)) throw new Error(`backup ${b.key}: ${up.error.message}`);
+      if (up.error && !/exists|duplicate/i.test(up.error.message)) throw new Error(`backup: ${up.error.message}`);
       backed++;
-
       const res = await storage.from(BUCKET).upload(b.key, fs.readFileSync(b.outPath), {
         contentType: "application/pdf", upsert: true, cacheControl: "60",
       });
-      if (res.error) throw new Error(`upload ${b.key}: ${res.error.message}`);
+      if (res.error) throw new Error(`upload: ${res.error.message}`);
       uploaded++;
       console.log(`  ok ${b.key} (${b.bytes} bytes, backup ${backupKey})`);
+    };
+    for (const b of built) {
+      try {
+        await putOnce(b);
+      } catch (first) {
+        try {
+          await putOnce(b);
+          console.log(`  ok ${b.key} (after retry)`);
+        } catch (second) {
+          uploadSkips.push({ key: b.key, reason: `${first.message} | retry: ${second.message}` });
+          console.log(`  SKIP ${b.key}: ${second.message}`);
+        }
+      }
     }
-    console.log(`\nbacked up: ${backed} | uploaded: ${uploaded}`);
+    console.log(`\nbacked up: ${backed} | uploaded: ${uploaded} | skipped: ${uploadSkips.length}`);
   }
 
   if (MODE === "verify" || MODE === "upload") {
     let ok = 0;
     const bad = [];
-    for (const b of built) {
-      const buf = await download(storage, b.key);
+    // After a successful backfill nothing is left to rebuild, so verify every
+    // referenced PDF, not just what this run touched.
+    const targets = MODE === "verify"
+      ? rows.filter((r) => !/^https?:\/\//i.test(r.key)).map((r) => ({ key: r.key }))
+      : built;
+    console.log(`\nverifying ${targets.length} stored PDFs through fresh signed URLs…`);
+    for (const b of targets) {
+      const buf = await downloadFresh(storage, b.key);
       if (isBroken(buf)) bad.push(`${b.key}: ${buf.length} bytes, header ${JSON.stringify(buf.subarray(0, 4).toString("latin1"))}`);
       else ok++;
     }
     console.log(`\nverify: ${ok} valid, ${bad.length} bad`);
     for (const x of bad) console.log(`  BAD ${x}`);
-    process.exit(bad.length ? 1 : 0);
+    for (const s of uploadSkips) console.log(`  SKIPPED ${s.key}: ${s.reason}`);
+    process.exit(bad.length || uploadSkips.length ? 1 : 0);
   }
 } finally {
   await db.end();
