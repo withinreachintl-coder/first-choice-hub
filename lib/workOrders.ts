@@ -20,6 +20,12 @@ function formatTs(d: Date | string | null): string {
   return fmt.format(date);
 }
 
+function hoursBetween(a: Date | string | null, b: Date | string | null): string {
+  if (!a || !b) return "";
+  const ms = new Date(b).getTime() - new Date(a).getTime();
+  return isNaN(ms) ? "" : (ms / 3600000).toFixed(2);
+}
+
 type Row = Record<string, unknown>;
 type Photo = { photo: string; photoName?: string };
 
@@ -60,6 +66,9 @@ async function mapRow(r: Row) {
     costAmount: r.cost_amount != null ? Number(r.cost_amount) : null,
     completionPhotoUrl: (await signedUrls((r.completion_photo_urls as string[]) ?? []))[0] ?? "",
     closurePdfUrl: await signedUrl((r.closure_pdf_url as string) ?? ""),
+    timeIn: formatTs(r.time_in as string),
+    timeOut: formatTs(r.time_out as string),
+    hours: hoursBetween(r.time_in as Date | null, r.time_out as Date | null),
   };
 }
 
@@ -147,7 +156,9 @@ export async function closeWorkOrder(id: string, p: Record<string, unknown>) {
        completion_photo_count = $6,
        completion_photo_urls = $7,
        closure_pdf_url = $8,
-       cost_amount = $9
+       cost_amount = $9,
+       time_in = ($10::timestamp at time zone 'America/Chicago'),
+       time_out = ($11::timestamp at time zone 'America/Chicago')
      where work_order_id = $1
      returning work_order_id`,
     [
@@ -160,6 +171,8 @@ export async function closeWorkOrder(id: string, p: Record<string, unknown>) {
       photoKeys,
       pdfKey || null,
       p.costAmount ?? null,
+      p.timeIn ?? null,
+      p.timeOut ?? null,
     ]
   );
   return rows.length > 0;
