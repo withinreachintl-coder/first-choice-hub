@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { C, SP, R, EL, TYPE, NUM, MONO, Icon, Card, EmptyState } from "../ui/theme";
+import { C, SP, R, EL, TYPE, NUM, MONO, Icon, Card, Eyebrow, EmptyState } from "../ui/theme";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // On-demand Open WOs / Closed WOs reports, filtered by location and date.
@@ -10,8 +10,9 @@ import { C, SP, R, EL, TYPE, NUM, MONO, Icon, Card, EmptyState } from "../ui/the
 
 const TZ = "America/Chicago";
 const REPORTS = {
-  open:   { name: "Open WOs",   file: "Open-WOs",   dateLabel: "Date opened" },
-  closed: { name: "Closed WOs", file: "Closed-WOs", dateLabel: "Date closed" },
+  open:    { name: "Open WOs",   file: "Open-WOs",   dateLabel: "Date opened" },
+  closed:  { name: "Closed WOs", file: "Closed-WOs", dateLabel: "Date closed" },
+  ridebys: { name: "Ride-Bys",   file: "Ride-Bys",   dateLabel: "Date of ride-by" },
 };
 
 const COLUMNS = {
@@ -34,7 +35,22 @@ const COLUMNS = {
     { key: "techName",    label: "Tech" },
     { key: "costAmount",  label: "Cost", align: "right", fmt: (v) => (v == null ? "" : fmtUsd(v)) },
   ],
+  ridebys: [
+    { key: "occurredOn",     label: "Date", fmt: fmtDate },
+    { key: "classification", label: "Type" },
+    { key: "loggedBy",       label: "Logged By" },
+    { key: "note",           label: "Note" },
+    { key: "hasPhoto",       label: "Photo", fmt: (v) => (v ? "Yes" : "No") },
+  ],
 };
+
+// Properties with no ride-by inside the selected range.
+const UNVISITED_COLUMNS = [
+  { key: "address",        label: "Property" },
+  { key: "classification", label: "Type" },
+  { key: "lastVisit",      label: "Last Ride-By", fmt: (v) => (v ? fmtDate(v) : "Never") },
+  { key: "daysSince",      label: "Days Since", align: "right", fmt: (v) => (v == null ? "" : String(v)) },
+];
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
 function chicagoToday() {
@@ -67,14 +83,18 @@ const cell = (col, row) => {
 const locationLabel = (group, sub) => (group ? (sub ? `${group} / ${sub}` : group) : "All locations");
 const slug = (s) => s.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
 
-// Group the (already sorted) rows by location_group, then location_sub.
-function groupRows(rows) {
+// Group the (already sorted) rows: work orders by location, ride-bys by property.
+function groupRows(rows, type) {
   const out = [];
   let cur = null;
   for (const r of rows) {
-    const key = JSON.stringify([r.locationGroup, r.locationSub]);
+    const key = type === "ridebys"
+      ? JSON.stringify([r.propertyId])
+      : JSON.stringify([r.locationGroup, r.locationSub]);
     if (!cur || cur.key !== key) {
-      cur = { key, group: r.locationGroup || "Unspecified", sub: r.locationSub, rows: [] };
+      cur = type === "ridebys"
+        ? { key, group: r.address || "Unspecified", sub: "", rows: [] }
+        : { key, group: r.locationGroup || "Unspecified", sub: r.locationSub, rows: [] };
       out.push(cur);
     }
     cur.rows.push(r);
@@ -95,10 +115,13 @@ export default function WoReports() {
   const [type, setType] = useState("open");
   const [group, setGroup] = useState("");
   const [sub, setSub] = useState("");
+  const [classification, setClassification] = useState("");
+  const [propertyId, setPropertyId] = useState("");
   const [to, setTo] = useState(chicagoToday);
   const [from, setFrom] = useState(() => addDays(chicagoToday(), -30));
-  const [report, setReport] = useState(null); // { type, group, sub, from, to, rows, generatedAt }
+  const [report, setReport] = useState(null); // { type, filters, rows, properties, summary, generatedAt }
   const [locations, setLocations] = useState([]);
+  const [propertyList, setPropertyList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const reqId = useRef(0);
@@ -109,14 +132,18 @@ export default function WoReports() {
     const id = ++reqId.current;
     setLoading(true); setError(null);
     try {
-      const qs = new URLSearchParams({ type, group, sub, from, to });
+      const qs = type === "ridebys"
+        ? new URLSearchParams({ type, classification, propertyId, from, to })
+        : new URLSearchParams({ type, group, sub, from, to });
       const res = await fetch(`/api/wo-reports?${qs}`, { cache: "no-store" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
       if (id !== reqId.current) return;
-      setLocations(j.locations || []);
+      if (type === "ridebys") setPropertyList(j.propertyList || []);
+      else setLocations(j.locations || []);
       setReport({
-        type, group, sub, from, to, rows: j.rows || [],
+        type, group, sub, classification, propertyId, from, to,
+        rows: j.rows || [], properties: j.properties || [], summary: j.summary || null,
         generatedAt: new Date().toLocaleString("en-US", { timeZone: TZ, month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true }),
       });
     } catch (e) {
@@ -124,23 +151,26 @@ export default function WoReports() {
     } finally {
       if (id === reqId.current) setLoading(false);
     }
-  }, [type, group, sub, from, to]);
+  }, [type, group, sub, classification, propertyId, from, to]);
 
   useEffect(() => { load(); }, [load]);
 
   const groups = [...new Set(locations.map((l) => l.group))];
   const subs = group ? locations.filter((l) => l.group === group && l.sub).map((l) => l.sub) : [];
+  const classifications = [...new Set(propertyList.map((p) => p.classification).filter(Boolean))].sort();
+  const pickableProperties = propertyList.filter((p) => !classification || p.classification === classification);
 
   const downloadPDF = async () => {
     if (!report) return;
     const { jsPDF } = await import("jspdf");
-    buildWoReportPDF(jsPDF, report);
+    buildWoReportPDF(jsPDF, report, propertyList);
   };
 
   const shown = report && report.type === type ? report : null;
   const cols = COLUMNS[type];
-  const grouped = shown ? groupRows(shown.rows) : [];
+  const grouped = shown ? groupRows(shown.rows, type) : [];
   const totals = shown ? totalsFor(shown.rows) : null;
+  const unvisited = shown && type === "ridebys" ? (shown.properties || []).filter((p) => p.visits === 0) : [];
 
   return (
     <>
@@ -151,12 +181,12 @@ export default function WoReports() {
         </span>
         <h1 style={{ ...TYPE.display, color: C.ink, margin: `0 0 ${SP.sm}px` }}>Work Order Reports</h1>
         <p style={{ ...TYPE.small, fontSize: 13.5, color: C.ink3, margin: 0 }}>
-          Open and closed work orders by location and date.
+          Work orders and property ride-bys by location and date.
         </p>
       </div>
 
       {/* Tabs */}
-      <div role="tablist" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, padding: 4,
+      <div role="tablist" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, padding: 4,
         background: C.surface, border: `1px solid ${C.line}`, borderRadius: R.md, marginBottom: SP.base, boxShadow: EL.sm }}>
         {Object.entries(REPORTS).map(([k, r]) => {
           const on = type === k;
@@ -174,14 +204,29 @@ export default function WoReports() {
       {/* Filters */}
       <Card style={{ marginBottom: SP.base }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: SP.md }}>
-          <Field label="Location Group">
-            <Select value={group} onChange={(v) => { setGroup(v); setSub(""); }}
-              options={[["", "All"], ...groups.map((g) => [g, g])]} />
-          </Field>
-          <Field label="Location">
-            <Select value={sub} onChange={setSub} disabled={!group}
-              options={[["", "All"], ...subs.map((s) => [s, s])]} />
-          </Field>
+          {type === "ridebys" ? (
+            <>
+              <Field label="Property Type">
+                <Select value={classification} onChange={(v) => { setClassification(v); setPropertyId(""); }}
+                  options={[["", "All"], ...classifications.map((c) => [c, c])]} />
+              </Field>
+              <Field label="Property">
+                <Select value={propertyId} onChange={setPropertyId}
+                  options={[["", "All"], ...pickableProperties.map((p) => [p.id, p.address])]} />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Location Group">
+                <Select value={group} onChange={(v) => { setGroup(v); setSub(""); }}
+                  options={[["", "All"], ...groups.map((g) => [g, g])]} />
+              </Field>
+              <Field label="Location">
+                <Select value={sub} onChange={setSub} disabled={!group}
+                  options={[["", "All"], ...subs.map((s) => [s, s])]} />
+              </Field>
+            </>
+          )}
           <Field label="Date From">
             <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inputStyle} />
           </Field>
@@ -215,7 +260,7 @@ export default function WoReports() {
             flexWrap: "wrap", gap: SP.md, alignItems: "flex-start", justifyContent: "space-between" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ ...TYPE.title, color: C.ink }}>{REPORTS[shown.type].name}</div>
-              <div style={{ ...TYPE.small, color: C.ink2, marginTop: 4 }}>{locationLabel(shown.group, shown.sub)}</div>
+              <div style={{ ...TYPE.small, color: C.ink2, marginTop: 4 }}>{scopeLabel(shown, propertyList)}</div>
               <div style={{ ...TYPE.small, color: C.ink3 }}>{fmtDate(shown.from)} to {fmtDate(shown.to)}</div>
               <div style={{ ...TYPE.micro, fontWeight: 500, color: C.ink4, marginTop: 4 }}>Generated {shown.generatedAt}</div>
             </div>
@@ -229,13 +274,35 @@ export default function WoReports() {
             </div>
           </div>
 
+          {/* Coverage summary (ride-bys only) */}
+          {type === "ridebys" && shown.summary && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))",
+              borderBottom: `1px solid ${C.line}` }}>
+              {[
+                ["Ride-bys", String(shown.summary.rideBys)],
+                ["Properties visited", `${shown.summary.propertiesVisited} of ${shown.summary.propertiesInScope}`],
+                ["Never visited", String(shown.summary.neverVisited)],
+                ["Longest gap", shown.summary.longestGapDays == null ? "-" : `${shown.summary.longestGapDays} days`],
+              ].map(([label, value]) => (
+                <div key={label} style={{ padding: `${SP.md}px ${SP.base}px`, borderRight: `1px solid ${C.line}` }}>
+                  <div style={{ ...TYPE.eyebrow, fontSize: 9.5, color: C.ink3 }}>{label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: C.ink, marginTop: 3, letterSpacing: "-0.02em", ...NUM }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {shown.rows.length === 0 ? (
             <div style={{ padding: SP.base }}>
-              <EmptyState icon="doc" title="No work orders" body="Nothing matches these filters. Try a wider date range or another location." />
+              <EmptyState icon="doc"
+                title={type === "ridebys" ? "No ride-bys logged" : "No work orders"}
+                body={type === "ridebys"
+                  ? "Nothing was logged in this range. Ride-bys are recorded on the Ride-By tab."
+                  : "Nothing matches these filters. Try a wider date range or another location."} />
             </div>
           ) : (
             <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-              <table style={{ width: "100%", minWidth: type === "closed" ? 980 : 640, borderCollapse: "collapse", ...TYPE.small }}>
+              <table style={{ width: "100%", minWidth: type === "closed" ? 980 : 640, borderCollapse: "collapse", ...TYPE.small, tableLayout: type === "ridebys" ? "auto" : undefined }}>
                 <thead>
                   <tr style={{ background: C.surfaceAlt }}>
                     {cols.map((c) => (
@@ -251,7 +318,9 @@ export default function WoReports() {
                 <tfoot>
                   <tr style={{ background: C.charcoal, color: "#fff" }}>
                     <td style={{ ...td, fontWeight: 700, borderTop: "none" }} colSpan={type === "closed" ? 6 : cols.length}>
-                      Total: {totals.count} work order{totals.count === 1 ? "" : "s"}
+                      {type === "ridebys"
+                        ? `Total: ${totals.count} ride-by${totals.count === 1 ? "" : "s"} across ${grouped.length} propert${grouped.length === 1 ? "y" : "ies"}`
+                        : `Total: ${totals.count} work order${totals.count === 1 ? "" : "s"}`}
                     </td>
                     {type === "closed" && (
                       <>
@@ -265,10 +334,50 @@ export default function WoReports() {
               </table>
             </div>
           )}
+
+          {/* Properties with no ride-by in range */}
+          {type === "ridebys" && unvisited.length > 0 && (
+            <>
+              <div style={{ padding: `${SP.md}px ${SP.base}px`, borderTop: `1px solid ${C.line}`, background: C.surfaceAlt }}>
+                <Eyebrow>Not visited in this range ({unvisited.length})</Eyebrow>
+              </div>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", ...TYPE.small }}>
+                  <thead>
+                    <tr style={{ background: C.surfaceAlt }}>
+                      {UNVISITED_COLUMNS.map((c) => (
+                        <th key={c.key} style={{ ...th, textAlign: c.align || "left" }}>{c.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unvisited.map((p) => (
+                      <tr key={p.propertyId}>
+                        {UNVISITED_COLUMNS.map((c) => (
+                          <td key={c.key} style={{ ...td, textAlign: c.align || "left", whiteSpace: "nowrap",
+                            ...(c.align === "right" ? NUM : {}) }}>
+                            {cell(c, p)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </Card>
       )}
     </>
   );
+}
+
+/** Header line describing what the report covers. */
+function scopeLabel(rep, propertyList) {
+  if (rep.type !== "ridebys") return locationLabel(rep.group, rep.sub);
+  const prop = rep.propertyId ? propertyList.find((p) => p.id === rep.propertyId) : null;
+  if (prop) return prop.address;
+  return rep.classification ? `All ${rep.classification.toLowerCase()} properties` : "All properties";
 }
 
 function GroupRows({ g, cols, type }) {
@@ -279,13 +388,14 @@ function GroupRows({ g, cols, type }) {
         <td colSpan={cols.length} style={{ ...td, background: "#F4F4F5", fontWeight: 700, color: C.ink }}>
           {g.group}{g.sub ? ` / ${g.sub}` : ""}
           <span style={{ fontWeight: 500, color: C.ink3 }}>
-            {" "}· {t.count} WO{t.count === 1 ? "" : "s"}
-            {type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}
+            {type === "ridebys"
+              ? ` · ${t.count} ride-by${t.count === 1 ? "" : "s"} · last ${fmtDate(g.rows[g.rows.length - 1].occurredOn)}`
+              : ` · ${t.count} WO${t.count === 1 ? "" : "s"}${type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}`}
           </span>
         </td>
       </tr>
       {g.rows.map((r) => (
-        <tr key={r.workOrderId}>
+        <tr key={r.workOrderId || r.id}>
           {cols.map((c) => (
             <td key={c.key} style={{ ...td, textAlign: c.align || "left", whiteSpace: "nowrap",
               ...(c.mono ? { fontFamily: MONO, fontSize: 12 } : {}), ...(c.align === "right" ? NUM : {}) }}>
@@ -337,17 +447,19 @@ const pdfBtn = { display: "flex", alignItems: "center", gap: 7, height: 38, padd
 // Exports exactly the report on screen: same rows, grouping, totals and header.
 
 const PDF_WIDTHS = {
-  open:   [40, 70, 34, 24, 30, 75],
-  closed: [34, 42, 25, 25, 37, 37, 16, 32, 25],
+  open:    [40, 70, 34, 24, 30, 75],
+  closed:  [34, 42, 25, 25, 37, 37, 16, 32, 25],
+  ridebys: [34, 26, 45, 148, 20],
 };
+const PDF_UNVISITED_WIDTHS = [120, 40, 60, 53];
 
-function buildWoReportPDF(jsPDF, rep) {
+function buildWoReportPDF(jsPDF, rep, propertyList = []) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const W = 297, H = 210, M = 12, CW = W - M * 2;
   const cols = COLUMNS[rep.type];
   const widths = PDF_WIDTHS[rep.type];
   const colX = (i) => M + widths.slice(0, i).reduce((a, b) => a + b, 0);
-  const loc = locationLabel(rep.group, rep.sub);
+  const loc = scopeLabel(rep, propertyList);
   let y = 0;
 
   // Header (matches the executive report PDF)
@@ -382,13 +494,36 @@ function buildWoReportPDF(jsPDF, rep) {
     if (y + h > H - 16) { doc.addPage(); y = 14; headerRow(); }
   };
 
+  // Coverage summary strip (ride-bys only)
+  if (rep.type === "ridebys" && rep.summary) {
+    const s = rep.summary;
+    const tiles = [
+      ["RIDE-BYS", String(s.rideBys)],
+      ["PROPERTIES VISITED", `${s.propertiesVisited} of ${s.propertiesInScope}`],
+      ["NEVER VISITED", String(s.neverVisited)],
+      ["LONGEST GAP", s.longestGapDays == null ? "-" : `${s.longestGapDays} days`],
+    ];
+    const tw = CW / tiles.length;
+    doc.setDrawColor(231, 231, 234); doc.setFillColor(255, 255, 255);
+    doc.roundedRect(M, y, CW, 16, 2, 2, "FD");
+    tiles.forEach(([label, value], i) => {
+      const x = M + i * tw;
+      if (i) { doc.setDrawColor(231, 231, 234); doc.line(x, y, x, y + 16); }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(6.5); doc.setTextColor(107, 114, 128);
+      doc.text(label, x + 4, y + 6);
+      doc.setFontSize(12); doc.setTextColor(23, 23, 24);
+      doc.text(value, x + 4, y + 13);
+    });
+    y += 22;
+  }
+
   headerRow();
   if (rep.rows.length === 0) {
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(107, 114, 128);
-    doc.text("No work orders match these filters.", M + 2, y + 7);
+    doc.text(rep.type === "ridebys" ? "No ride-bys logged in this range." : "No work orders match these filters.", M + 2, y + 7);
   }
 
-  groupRows(rep.rows).forEach((g) => {
+  groupRows(rep.rows, rep.type).forEach((g) => {
     const t = totalsFor(g.rows);
     ensure(14);
     doc.setFillColor(244, 244, 245); doc.rect(M, y, CW, 7, "F");
@@ -397,8 +532,10 @@ function buildWoReportPDF(jsPDF, rep) {
     doc.text(title, M + 2, y + 4.8);
     const titleW = doc.getTextWidth(title); // measure in bold, before switching fonts
     doc.setFont("helvetica", "normal"); doc.setTextColor(107, 114, 128);
-    doc.text(`· ${t.count} WO${t.count === 1 ? "" : "s"}${rep.type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}`,
-      M + 4 + titleW, y + 4.8);
+    const sub = rep.type === "ridebys"
+      ? `· ${t.count} ride-by${t.count === 1 ? "" : "s"} · last ${fmtDate(g.rows[g.rows.length - 1].occurredOn)}`
+      : `· ${t.count} WO${t.count === 1 ? "" : "s"}${rep.type === "closed" ? ` · ${t.hours.toFixed(2)} hrs · ${fmtUsd(t.cost)}` : ""}`;
+    doc.text(sub, M + 4 + titleW, y + 4.8);
     y += 7;
 
     doc.setFontSize(7.5);
@@ -421,10 +558,46 @@ function buildWoReportPDF(jsPDF, rep) {
   ensure(9);
   doc.setFillColor(45, 45, 45); doc.rect(M, y + 1, CW, 8, "F");
   doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(255, 255, 255);
-  doc.text(`Total: ${totals.count} work order${totals.count === 1 ? "" : "s"}`, M + 2, y + 6.2);
+  doc.text(
+    rep.type === "ridebys"
+      ? `Total: ${totals.count} ride-by${totals.count === 1 ? "" : "s"}`
+      : `Total: ${totals.count} work order${totals.count === 1 ? "" : "s"}`,
+    M + 2, y + 6.2
+  );
   if (rep.type === "closed") {
     doc.text(totals.hours.toFixed(2), colX(6) + widths[6] - 2, y + 6.2, { align: "right" });
     doc.text(fmtUsd(totals.cost), colX(8) + widths[8] - 2, y + 6.2, { align: "right" });
+  }
+  y += 12;
+
+  // Properties with no ride-by in range
+  const unvisited = rep.type === "ridebys" ? (rep.properties || []).filter((p) => p.visits === 0) : [];
+  if (unvisited.length) {
+    const uw = PDF_UNVISITED_WIDTHS;
+    const ux = (i) => M + uw.slice(0, i).reduce((a, b) => a + b, 0);
+    ensure(20);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.setTextColor(23, 23, 24);
+    doc.text(`Not visited in this range (${unvisited.length})`, M, y + 4);
+    y += 8;
+    doc.setFillColor(250, 250, 251); doc.rect(M, y, uw.reduce((a, b) => a + b, 0), 7, "F");
+    doc.setFontSize(6.5); doc.setTextColor(107, 114, 128);
+    UNVISITED_COLUMNS.forEach((c, i) => {
+      if (c.align === "right") doc.text(c.label.toUpperCase(), ux(i) + uw[i] - 2, y + 4.7, { align: "right" });
+      else doc.text(c.label.toUpperCase(), ux(i) + 2, y + 4.7);
+    });
+    y += 7;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+    unvisited.forEach((p) => {
+      ensure(6.5);
+      doc.setDrawColor(238, 238, 241); doc.line(M, y, M + uw.reduce((a, b) => a + b, 0), y);
+      UNVISITED_COLUMNS.forEach((c, i) => {
+        doc.setTextColor(i === 0 ? 23 : 63, i === 0 ? 23 : 63, i === 0 ? 24 : 70);
+        const txt = doc.splitTextToSize(cell(c, p), uw[i] - 3)[0] || "";
+        if (c.align === "right") doc.text(txt, ux(i) + uw[i] - 2, y + 4.4, { align: "right" });
+        else doc.text(txt, ux(i) + 2, y + 4.4);
+      });
+      y += 6.5;
+    });
   }
 
   // Footer on every page
@@ -437,6 +610,8 @@ function buildWoReportPDF(jsPDF, rep) {
     doc.text(`Page ${p} of ${pages}`, W - M, H - 5.5, { align: "right" });
   }
 
-  const locSlug = rep.group ? slug(rep.sub ? `${rep.group}-${rep.sub}` : rep.group) : "All-Locations";
+  const locSlug = rep.type === "ridebys"
+    ? slug(loc) || "All-Properties"
+    : (rep.group ? slug(rep.sub ? `${rep.group}-${rep.sub}` : rep.group) : "All-Locations");
   doc.save(`${REPORTS[rep.type].file}_${locSlug}_${rep.from}_${rep.to}.pdf`);
 }
